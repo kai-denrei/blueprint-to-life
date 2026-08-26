@@ -54,25 +54,18 @@ const server = createServer(async (req, res) => {
   if (pathname.endsWith('/')) pathname += 'index.html';
 
   // Contain the served tree: normalize, then verify the resolved path is under ROOT.
-  const safe = normalize(pathname);
-  const candidates = [join(ROOT, safe), join(ROOT, 'public', safe)];
-  if (candidates.some((c) => c !== ROOT && !c.startsWith(ROOT + sep))) {
+  // The repo root IS the site root. There was a public/ overlay here; it was removed when
+  // those assets were flattened into the root, because an overlay that only this server
+  // implements is a difference between dev and any static host — and the host wins.
+  const filePath = join(ROOT, normalize(pathname));
+  if (filePath !== ROOT && !filePath.startsWith(ROOT + sep)) {
     res.writeHead(403).end('forbidden');
     return;
   }
 
   try {
-    // public/ is overlaid at the web root: the cache-busting toolkit installs its badge and
-    // shape assets there but references them as /cb-badge.js and /cb-shapes/NN.svg.
-    let filePath = null;
-    for (const c of candidates) {
-      try {
-        const info = await stat(c);
-        if (!info.isDirectory()) { filePath = c; break; }
-      } catch { /* try the next candidate */ }
-    }
-    if (!filePath) throw Object.assign(new Error('not found'), { code: 'ENOENT' });
-
+    const info = await stat(filePath);
+    if (info.isDirectory()) throw Object.assign(new Error('is a directory'), { code: 'ENOENT' });
     const body = await readFile(filePath);
     res.writeHead(200, {
       'Content-Type': TYPES[extname(filePath)] || 'application/octet-stream',

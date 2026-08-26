@@ -149,6 +149,37 @@ Install: Chrome/Android get a real button wired to `beforeinstallprompt`; iOS Sa
 Share-sheet hint, because there is no programmatic install there and a button that does nothing
 is worse than none.
 
+## Deployed
+
+Live at **https://kai-denrei.github.io/blueprint-to-life/** — GitHub Pages, straight from
+`main`. There is no build step and no CI: the repo root *is* the site root, which is why
+`public/` was flattened away and every URL in the project is relative rather than
+root-absolute.
+
+That relativity is load-bearing, not stylistic. Pages serves this from a project path, so
+`/styles.css`, an import-map value of `/vendor/three/...`, a `register('/sw.js')` and a
+`start_url` of `/` all 404 there while working perfectly on localhost. Import-map values, the
+service-worker scope and the manifest's URLs each resolve against a base URL, so relative is
+correct in all of them — and `npm test` now fails on any root-absolute reference in those
+places, because that class of bug is invisible until deploy.
+
+### What Pages does to the cache-busting story
+
+Pages does not let you set response headers. Everything comes back `Cache-Control: max-age=600`.
+So the arrangement this project argues for — `no-cache` on HTML, `immutable` on fingerprinted
+assets — is only true under `npm start`. On Pages:
+
+- the HTML carrying the fingerprints is cached for up to 10 minutes, so a new build reaches a
+  returning visitor on that delay rather than immediately;
+- fingerprinted assets get 10 minutes instead of a year, which is merely wasteful, not wrong;
+- **the service worker becomes the primary invalidation mechanism**, not the headers. Its cache
+  name is the build token, it deletes every non-matching cache on activate, and the update
+  toast is what actually moves a user onto a new build.
+
+That inverts the priority stated further down in this README, and it is worth being explicit
+about: on a host you cannot configure, the SW is the control surface. The headers section still
+applies to any host where you *can* set them.
+
 ## Verifying
 
 ```bash

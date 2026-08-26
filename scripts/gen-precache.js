@@ -32,23 +32,24 @@ function walk(dir, filter) {
   return out;
 }
 
-const web = (abs, base = ROOT) => '/' + relative(base, abs).split('\\').join('/');
+// Relative, not root-absolute: entries are resolved against the worker's own URL, so the same
+// list works at the site root and under a project path like /blueprint-to-life/.
+const web = (abs, base = ROOT) => './' + relative(base, abs).split('\\').join('/');
 const js = (f) => f.endsWith('.js');
 
 // Fingerprinted entries need the token interpolated at runtime, so they are emitted as
 // template literals. Everything else is a plain string.
-const fingerprinted = ['/styles.css', '/src/main.js', '/cb-badge.js'];
+const fingerprinted = ['./styles.css', './src/main.js', './cb-badge.js'];
 
 const urls = [
-  '/',
-  '/index.html',
-  '/offline.html',
-  '/manifest.webmanifest',
+  './',
+  './index.html',
+  './offline.html',
+  './manifest.webmanifest',
   ...fingerprinted,
   ...walk(join(ROOT, 'src'), js).map((f) => web(f)),
   ...walk(join(ROOT, 'vendor', 'three'), js).map((f) => web(f)),
-  ...walk(join(ROOT, 'public', 'icons'), (f) => f.endsWith('.png'))
-    .map((f) => web(f, join(ROOT, 'public'))),
+  ...walk(join(ROOT, 'icons'), (f) => f.endsWith('.png')).map((f) => web(f)),
 ];
 
 const seen = new Set();

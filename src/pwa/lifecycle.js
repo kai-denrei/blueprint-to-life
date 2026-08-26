@@ -48,7 +48,10 @@ export async function registerServiceWorker(onUpdateReady) {
 
   let reg;
   try {
-    reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    // Relative, so the worker's scope follows wherever the app is served from. Registering
+    // '/sw.js' with scope '/' is a 404 on a project Pages path, and a worker that fails to
+    // register takes the whole offline story with it.
+    reg = await navigator.serviceWorker.register('./sw.js', { scope: './' });
   } catch (err) {
     console.warn('[pwa] service worker registration failed', err);
     return null;

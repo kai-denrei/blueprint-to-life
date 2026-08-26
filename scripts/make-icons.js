@@ -17,7 +17,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'public', 'icons');
+const OUT = join(ROOT, 'icons');
 
 const INK = [0x14, 0x31, 0x4f];
 const PAPER = [0xe8, 0xee, 0xf6];

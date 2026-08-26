@@ -273,14 +273,14 @@ test('cache-bust token is present in index.html and stamped on every local asset
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];
   assert.ok(token, 'no cache-bust meta tag — the build has no identity');
-  const unstamped = [...html.matchAll(/(?:src|href)="(\/[^"?]+)"/g)].map((m) => m[1]);
+  const unstamped = [...html.matchAll(/(?:src|href)="(\.\/[^"?]+)"/g)].map((m) => m[1]);
   assert.deepEqual(unstamped, [], `asset URLs missing ?v=: ${unstamped.join(', ')}`);
 });
 
 console.log('\nPWA');
 
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
-const manifest = JSON.parse(readFileSync(join(ROOT, 'public', 'manifest.webmanifest'), 'utf8'));
+const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.webmanifest'), 'utf8'));
 
 test('service worker cache key matches the build token in index.html', () => {
   // This is the load-bearing one. scripts/bust.sh stamps the SW token, but that step is a
@@ -318,7 +318,7 @@ test('manifest has 192, 512 and a maskable icon, and every file exists', () => {
   assert.ok(manifest.icons.some((i) => i.purpose === 'maskable'),
     'no maskable icon — Android will letterbox the mark inside its mask');
   for (const icon of manifest.icons) {
-    assert.ok(statSync(join(ROOT, 'public', icon.src)).size > 0, `missing icon file: ${icon.src}`);
+    assert.ok(statSync(join(ROOT, icon.src)).size > 0, `missing icon file: ${icon.src}`);
   }
 });
 
@@ -334,7 +334,7 @@ test('iOS head tags are present — iOS ignores the manifest for most of this', 
   ]) {
     assert.ok(html.includes(needle), `index.html missing ${needle}`);
   }
-  assert.ok(statSync(join(ROOT, 'public', 'icons', 'apple-touch-icon-180.png')).size > 0);
+  assert.ok(statSync(join(ROOT, 'icons', 'apple-touch-icon-180.png')).size > 0);
 });
 
 test('every precached URL in the service worker resolves to a real file', () => {
@@ -362,6 +362,38 @@ test('every precached URL in the service worker resolves to a real file', () => 
   // purpose) — it just quietly leaves a hole in the offline app. This is the only thing that
   // catches it.
   assert.deepEqual(missing, [], `precache references files that do not exist: ${missing.join(', ')}`);
+});
+
+test('no root-absolute URLs anywhere the site is addressed from', () => {
+  // The site is served from a project path on GitHub Pages (/blueprint-to-life/), so every
+  // root-absolute reference 404s there while working perfectly on localhost — the worst kind
+  // of bug, invisible until deploy. Import-map values, the SW registration and its scope, and
+  // the manifest's start_url/scope/icons all resolve against a base URL, so relative is
+  // correct in every one of them.
+  const offenders = [];
+
+  for (const m of html.matchAll(/(?:src|href)="(\/[^\/][^"]*)"/g)) offenders.push(`index.html: ${m[1]}`);
+  for (const m of html.matchAll(/"three(?:\/addons\/)?":\s*"(\/[^"]*)"/g)) offenders.push(`importmap: ${m[1]}`);
+
+  const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
+  const list = sw.slice(sw.indexOf('<precache:begin>'), sw.indexOf('<precache:end>'));
+  for (const m of list.matchAll(/['`](\/[^'`]*)['`]/g)) offenders.push(`sw precache: ${m[1]}`);
+
+  const life = readFileSync(join(ROOT, 'src', 'pwa', 'lifecycle.js'), 'utf8');
+  for (const m of life.matchAll(/register\(\s*'(\/[^']*)'/g)) offenders.push(`sw register: ${m[1]}`);
+  for (const m of life.matchAll(/scope:\s*'(\/[^']*)'/g)) offenders.push(`sw scope: ${m[1]}`);
+
+  for (const key of ['start_url', 'scope', 'id']) {
+    if (typeof manifest[key] === 'string' && manifest[key].startsWith('/')) {
+      offenders.push(`manifest.${key}: ${manifest[key]}`);
+    }
+  }
+  for (const icon of manifest.icons) {
+    if (icon.src.startsWith('/')) offenders.push(`manifest icon: ${icon.src}`);
+  }
+
+  assert.deepEqual(offenders, [],
+    `root-absolute URLs break a subpath deploy:\n${offenders.join('\n')}`);
 });
 
 test('offline fallback exists and is precached', () => {

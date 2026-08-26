@@ -1,7 +1,9 @@
 node_modules/
 
-# Vendored three build — regenerate with `npm run vendor`
-vendor/
+# vendor/ IS committed. This project has no bundler, so the vendored three build is not a
+# build artifact — it is what the site serves. GitHub Pages has no npm step, so a gitignored
+# vendor/ means a deployed page that 404s its entire runtime.
+# Refresh it with `npm run vendor` after bumping three in package.json.
 
 .DS_Store
 *.glb
