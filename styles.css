@@ -1,0 +1,461 @@
+/*
+  Schematic chrome.
+
+  Two blues and a paper tone, one accent, nothing else. A schematic reads as a schematic
+  because of restraint — every additional hue pushes it toward "UI mockup of a schematic".
+*/
+:root {
+  --paper:      #e8eef6;
+  --ink:        #14314f;
+  --ink-mid:    #53749c;
+  --ink-faint:  #9fb6d2;
+  --accent:     #d06a2a;
+  --panel-bg:   rgba(232, 238, 246, 0.78);
+  --panel-line: rgba(20, 49, 79, 0.34);
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
+
+  /* Layout tokens live on :root, not on #app. cb-badge.js injects its widget as a child of
+     <body>, so an #app-scoped --bar-h made its `bottom: calc(var(--bar-h) ...)` an invalid
+     calc — the declaration was dropped entirely and the badge fell off the bottom of the
+     screen. Second time this exact scoping mistake bit; tokens belong at the root. */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --bar-h: 0px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: #dbe3ee;
+  color: var(--ink);
+  font-family: var(--mono);
+  overflow: hidden;
+}
+
+/* `color` is declared here as well as on body: the mode-pbr palette override lives on #app,
+   and body is not a descendant of #app, so text that inherited from body kept the light-mode
+   ink and went dark-on-dark in PBR mode. */
+/* 100dvh, not 100vh: mobile browsers size vh against the *largest* viewport, so 100vh puts
+   the bottom control bar underneath the URL bar until the user scrolls. dvh tracks the
+   viewport as the browser chrome collapses. */
+#app {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  color: var(--ink);
+}
+
+/* touch-action:none hands every gesture to OrbitControls. Without it the browser claims
+   vertical drags for page scroll and one-finger orbit dies on the first pixel. */
+#view {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  display: block;
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.label-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+
+.chrome { position: absolute; inset: 0; pointer-events: none; }
+.chrome > * { pointer-events: auto; }
+
+/* Mode transitions cover the ortho<->perspective snap, which cannot be interpolated. */
+#app #view,
+#app .label-layer { transition: opacity 110ms ease-out; }
+#app.crossfade #view,
+#app.crossfade .label-layer { opacity: 0; }
+
+#app.hide-chrome .chrome,
+#app.hide-chrome .label-layer { opacity: 0; pointer-events: none; }
+#app.no-callouts .label-layer { opacity: 0; }
+
+/* --- panels --------------------------------------------------------------- */
+
+.panel {
+  position: absolute;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-line);
+  backdrop-filter: blur(3px);
+  color: var(--ink);
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: 0.04em;
+}
+
+.panel-h {
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  padding: 5px 10px 4px;
+  border-bottom: 1px solid var(--panel-line);
+  color: var(--ink-mid);
+}
+
+/* Title block — bottom right in drafting convention, top left here so the drawing
+   itself keeps the optical centre. */
+.title-block { top: 18px; left: 18px; min-width: 330px; }
+.tb-title {
+  font-size: 19px;
+  letter-spacing: 0.14em;
+  padding: 11px 14px 2px;
+  font-weight: 600;
+}
+.tb-sub {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--ink-mid);
+  padding: 0 14px 10px;
+}
+.tb-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  border-top: 1px solid var(--panel-line);
+}
+.tb-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 5px 8px 6px;
+  border-right: 1px solid var(--panel-line);
+  font-size: 9px;
+}
+.tb-cell:last-child { border-right: 0; }
+.tb-k { color: var(--ink-faint); letter-spacing: 0.14em; font-size: 8px; }
+.tb-v { letter-spacing: 0.08em; }
+
+/* Legend */
+.legend { bottom: 18px; left: 18px; width: 330px; }
+.legend-list { list-style: none; margin: 0; padding: 6px 0 8px; }
+.legend-item {
+  display: grid;
+  grid-template-columns: 26px 1fr auto;
+  gap: 8px;
+  padding: 2px 12px;
+  cursor: default;
+  font-size: 10.5px;
+}
+.legend-item:hover { background: rgba(208, 106, 42, 0.16); }
+.legend-n { color: var(--accent); }
+.legend-q { color: var(--ink-faint); }
+
+/* Instrumentation */
+.instrumentation { top: 18px; right: 18px; width: 236px; }
+.instr-grid { padding: 4px 0 6px; }
+.instr-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 2px 12px;
+  font-size: 10.5px;
+}
+.instr-row:nth-child(odd) { background: rgba(20, 49, 79, 0.045); }
+.instr-k { color: var(--ink-mid); font-size: 9px; letter-spacing: 0.1em; align-self: center; }
+.instr-v { font-variant-numeric: tabular-nums; }
+.instr-foot {
+  border-top: 1px solid var(--panel-line);
+  padding: 5px 12px;
+  font-size: 8px;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+}
+
+/* Controls */
+.controls { bottom: 18px; right: 18px; width: 340px; padding: 9px 12px 11px; }
+.ctl-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+.ctl-k {
+  width: 54px;
+  flex: none;
+  font-size: 8.5px;
+  letter-spacing: 0.16em;
+  color: var(--ink-mid);
+}
+.ctl-v { width: 44px; text-align: right; font-variant-numeric: tabular-nums; font-size: 10px; }
+
+.btn {
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  padding: 3px 7px;
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--panel-line);
+  cursor: pointer;
+}
+.btn:hover { background: rgba(20, 49, 79, 0.09); }
+.btn.on { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+
+.slider-row input[type="range"] {
+  flex: 1;
+  height: 2px;
+  appearance: none;
+  background: var(--ink-faint);
+  outline: none;
+}
+.slider-row input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 11px;
+  background: var(--ink);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.slider-row input[type="range"]::-moz-range-thumb {
+  width: 11px; height: 11px; background: var(--ink); border: 0; border-radius: 50%; cursor: pointer;
+}
+
+/* Drawing frame corner marks */
+.frame { position: absolute; inset: 8px; pointer-events: none; }
+.corner { position: absolute; width: 26px; height: 26px; border: 1px solid var(--panel-line); }
+.corner.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.corner.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.corner.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.corner.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+/* --- callouts ------------------------------------------------------------- */
+
+.callout { position: relative; color: var(--ink); font-size: 10px; letter-spacing: 0.08em; }
+.cal-dot {
+  position: absolute; left: -3px; top: -3px;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--ink);
+  box-shadow: 0 0 0 3px rgba(232, 238, 246, 0.7);
+}
+.cal-line {
+  position: absolute; left: 0; top: 0;
+  width: 54px; height: 1px;
+  background: var(--ink);
+  transform-origin: 0 50%;
+}
+.cal-tag {
+  position: absolute;
+  display: flex;
+  gap: 7px;
+  align-items: baseline;
+  white-space: nowrap;
+  padding: 0 3px 2px;
+  border-bottom: 1px solid var(--ink);
+  background: rgba(232, 238, 246, 0.72);
+}
+.cal-num { color: var(--accent); }
+
+.dir-ne .cal-line { transform: rotate(-40deg); }
+.dir-ne .cal-tag  { left: 41px; top: -46px; }
+.dir-nw .cal-line { transform: rotate(-140deg); }
+.dir-nw .cal-tag  { right: 41px; top: -46px; }
+.dir-se .cal-line { transform: rotate(40deg); }
+.dir-se .cal-tag  { left: 41px; top: 26px; }
+.dir-sw .cal-line { transform: rotate(140deg); }
+.dir-sw .cal-tag  { right: 41px; top: 26px; }
+
+/* PBR mode: the paper chrome would fight a lit 3D render, so it recedes. */
+#app.mode-pbr { --panel-bg: rgba(18, 22, 27, 0.74); --ink: #d7e2ef; --ink-mid: #8fa4bb; --ink-faint: #5d6f85; --panel-line: rgba(215, 226, 239, 0.28); }
+#app.mode-pbr .cal-dot, #app.mode-pbr .cal-line { background: var(--ink); }
+#app.mode-pbr .cal-dot { box-shadow: 0 0 0 3px rgba(18, 22, 27, 0.6); }
+#app.mode-pbr .cal-tag { background: rgba(18, 22, 27, 0.68); }
+#app.mode-pbr .btn.on { background: var(--ink); color: #12161b; }
+
+.fatal {
+  position: fixed; inset: 0;
+  display: grid; place-content: center;
+  padding: 40px; text-align: center;
+  background: var(--paper); color: var(--ink);
+  font-family: var(--mono); font-size: 13px; line-height: 1.6;
+}
+
+
+/* ==========================================================================
+   Compact layout
+   ==========================================================================
+   Below the breakpoint the three data panels stop being corner furniture and become bottom
+   sheets, one open at a time, driven by a persistent bottom bar. The panels themselves are
+   unchanged and keep updating whether open or not — there is one chrome implementation, not
+   a desktop one and a mobile one.
+
+   Everything is inset by env(safe-area-inset-*) so the bar clears the iPhone home indicator
+   and the title clears the notch when the app runs standalone.
+   ========================================================================== */
+
+.mobile-bar { display: none; }
+.toast-host { position: absolute; inset: auto 0 0 0; pointer-events: none; z-index: 40; }
+.toast {
+  pointer-events: auto;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  width: fit-content; max-width: min(30rem, calc(100vw - 32px));
+  margin: 0 auto 14px;
+  padding: 9px 12px;
+  background: var(--ink); color: var(--paper);
+  border: 1px solid var(--ink);
+  font-size: 10.5px; letter-spacing: 0.06em;
+  box-shadow: 0 6px 22px rgba(10, 24, 40, 0.28);
+}
+.toast .btn { color: var(--paper); border-color: rgba(232, 238, 246, 0.45); }
+.toast .btn:hover { background: rgba(232, 238, 246, 0.16); }
+.toast .btn.on { background: var(--paper); color: var(--ink); border-color: var(--paper); }
+.toast-t { flex: 1 1 12rem; }
+
+.btn.install { border-color: var(--accent); color: var(--accent); }
+.btn.install:hover { background: rgba(208, 106, 42, 0.14); }
+
+/* Connectivity: the only always-visible state change, kept to a hairline so it informs
+   without nagging. An offline 3D viewer that precached its whole runtime still works. */
+#app.offline .instrumentation { border-color: var(--accent); }
+#app.offline .instr-row:has(.instr-v) .instr-v { }
+
+@media (max-width: 820px), (pointer: coarse) and (max-width: 1024px) {
+  :root { --bar-h: 86px; }
+
+  .panel { font-size: 12px; }
+
+  /* Title collapses to a strip: name only, drawing metadata moves into the DATA sheet's
+     context rather than eating a third of a phone screen. */
+  .title-block {
+    top: calc(8px + var(--safe-t));
+    left: calc(8px + var(--safe-l));
+    right: calc(8px + var(--safe-r));
+    min-width: 0;
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 7px 11px;
+  }
+  .tb-title { flex: none; font-size: 14px; padding: 0; letter-spacing: 0.1em; white-space: nowrap; }
+  .tb-sub {
+    flex: 1 1 0; min-width: 0;
+    padding: 0; font-size: 8px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tb-grid { display: none; }
+  .frame { display: none; }
+
+  /* Sheets */
+  .legend, .instrumentation, .controls {
+    position: fixed;
+    left: 0; right: 0;
+    bottom: calc(var(--bar-h) + var(--safe-b));
+    top: auto;
+    width: auto;
+    max-height: min(56dvh, 460px);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    border-left: 0; border-right: 0; border-bottom: 0;
+    background: color-mix(in srgb, var(--panel-bg) 100%, transparent);
+    backdrop-filter: blur(10px);
+    transform: translateY(calc(100% + var(--bar-h) + var(--safe-b)));
+    transition: transform 200ms cubic-bezier(0.22, 0.8, 0.3, 1);
+    will-change: transform;
+  }
+  #app[data-sheet="legend"] .legend,
+  #app[data-sheet="instrumentation"] .instrumentation,
+  #app[data-sheet="controls"] .controls { transform: translateY(0); }
+
+  .legend-item { padding: 7px 14px; font-size: 12px; }
+  .instr-row { padding: 6px 14px; font-size: 12px; }
+  .instr-k { font-size: 10px; }
+  .controls { width: auto; padding: 12px 14px 16px; }
+  /* The bottom bar already carries the view row; repeating it inside the CTRL sheet just
+     overflowed horizontally and cut FREE off the end. */
+  .controls .ctl-row:first-child { display: none; }
+
+  /* Touch targets. 9px buttons are a desktop affordance; a finger needs ~28px of height. */
+  .btn { font-size: 10px; padding: 8px 11px; }
+  .ctl-row { gap: 9px; margin: 9px 0; }
+  .ctl-k { width: 58px; font-size: 9.5px; }
+  .slider-row input[type="range"] { height: 26px; background: transparent; }
+  .slider-row input[type="range"]::-webkit-slider-runnable-track {
+    height: 2px; background: var(--ink-faint);
+  }
+  .slider-row input[type="range"]::-webkit-slider-thumb {
+    margin-top: -11px; width: 24px; height: 24px;
+  }
+  .slider-row input[type="range"]::-moz-range-track { height: 2px; background: var(--ink-faint); }
+  .slider-row input[type="range"]::-moz-range-thumb { width: 24px; height: 24px; }
+
+  /* Bottom bar: view row above, sheet tabs below. Views scroll horizontally rather than
+     wrapping, so the bar height is fixed and the sheets can be positioned against it. */
+  .mobile-bar {
+    display: block;
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 30;
+    padding: 6px calc(8px + var(--safe-r)) calc(6px + var(--safe-b)) calc(8px + var(--safe-l));
+    background: var(--panel-bg);
+    border-top: 1px solid var(--panel-line);
+    backdrop-filter: blur(10px);
+  }
+  .sheet-views {
+    display: flex; gap: 5px;
+    overflow-x: auto; overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 5px;
+  }
+  .sheet-views::-webkit-scrollbar { display: none; }
+  .sheet-views .btn { flex: none; }
+  .sheet-tabs { display: flex; gap: 5px; }
+  .sheet-tabs .btn { flex: 1; text-align: center; }
+
+  .toast-host { bottom: calc(var(--bar-h) + var(--safe-b)); }
+
+  /* The cache-bust badge is fixed bottom-right by cb-badge.js, which is exactly where the
+     sheet tabs are. Lift it above the bar rather than hiding it — being able to see which
+     build you are on matters more on a device you cannot open devtools on. */
+  #cb-badge {
+    bottom: calc(var(--bar-h) + var(--safe-b) + 8px) !important;
+    right: calc(8px + var(--safe-r)) !important;
+    left: auto !important;
+    top: auto !important;
+    transform: scale(0.85);
+    transform-origin: 100% 100%;
+  }
+
+  /* Callouts are readable but crowded on a phone; main.js starts them hidden and the
+     CALLOUTS button in the CTRL sheet brings them back. */
+  .callout { font-size: 9.5px; }
+  .cal-line { width: 34px; }
+  .dir-ne .cal-tag { left: 26px; top: -34px; }
+  .dir-nw .cal-tag { right: 26px; top: -34px; }
+  .dir-se .cal-tag { left: 26px; top: 20px; }
+  .dir-sw .cal-tag { right: 26px; top: 20px; }
+}
+
+/* Standalone (installed) has no browser chrome to fall back on, so the title strip carries
+   the safe-area padding itself and the drawing gets the full sheet. */
+@media (display-mode: standalone) {
+  .title-block { top: calc(6px + var(--safe-t)); }
+}
+
+/* Short landscape (a phone on its side).
+   A bottom sheet is the wrong shape here: at this height it covers the entire drawing, which
+   is what "max-height: 74dvh" produced — a full-screen blurred panel with the vehicle behind
+   it. The spare space in landscape is horizontal, so the sheets become a right-hand drawer and
+   the model keeps the left two-thirds of the sheet. */
+@media (max-height: 560px) and (orientation: landscape) {
+  .legend, .instrumentation, .controls {
+    left: auto;
+    right: 0;
+    top: 0;
+    bottom: calc(var(--bar-h) + var(--safe-b));
+    width: min(48vw, 400px);
+    max-height: none;
+    border-left: 1px solid var(--panel-line);
+    transform: translateX(calc(100% + 8px));
+    transition: transform 200ms cubic-bezier(0.22, 0.8, 0.3, 1);
+  }
+  #app[data-sheet="legend"] .legend,
+  #app[data-sheet="instrumentation"] .instrumentation,
+  #app[data-sheet="controls"] .controls { transform: translateX(0); }
+
+  .legend-item, .instr-row { padding: 4px 12px; font-size: 11px; }
+  .ctl-row { margin: 7px 0; }
+  .title-block { right: auto; max-width: 60vw; }
+  .toast-host { right: auto; width: min(52vw, 420px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #app #view, #app .label-layer,
+  .legend, .instrumentation, .controls { transition: none; }
+}

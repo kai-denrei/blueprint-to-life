@@ -1,0 +1,163 @@
+# blueprint-to-life
+
+A tank built entirely from code as a Three.js scene graph, rendered two ways: as a technical
+blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
+
+The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
+never baked into the asset — toggling display modes touches nothing under `src/tank/`, and a
+test enforces that.
+
+## Run it
+
+```bash
+npm install
+npm run vendor        # copies three out of node_modules into vendor/ (no bundler)
+npm run icons         # generates the PWA icon set (no image deps — see scripts/make-icons.js)
+npm start             # http://127.0.0.1:5173/
+```
+
+- `/` — the tank
+- `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
+
+Keys: `1`–`6` views · `b` blueprint/PBR · `c` collision proxy · `h` hide chrome.
+
+On a phone the four corner panels become bottom sheets driven by a persistent bar (KEY / DATA /
+CTRL), one open at a time; in short landscape they become a right-hand drawer instead, because
+a bottom sheet at that height covers the entire drawing. Same chrome either way — the panels
+keep updating whether open or not, so there is no second code path for small screens.
+
+## Layout
+
+```
+src/tank/       the asset — geometry, dimensions, materials, part registry
+src/render/     display modes — blueprint G-buffer + composite, PBR lighting
+src/camera/     ortho elevations + perspective iso, snap-and-ease between them
+src/chrome/     schematic overlay (title block, legend, instruments, callouts)
+src/subjects/   what the chrome and the app are pointed at — tank.js, box.js
+server/serve.js static server with the cache-control split the busting layer needs
+```
+
+`src/tank/` must not import from `src/render/`, `src/chrome/` or `src/camera/`, and
+`src/render/` must not import from `src/tank/`. `npm test` fails the build if either happens.
+
+## How the blueprint pass works
+
+One scene pass into a two-attachment MRT target with a depth texture, then one fullscreen
+composite. No EffectComposer — there is exactly one effect.
+
+| attachment | contents |
+|---|---|
+| 0 | view-space normal (rgb) + part id (a) |
+| 1 | flat banded ink fill |
+| depth | silhouette and occlusion edges |
+
+The outline is a discontinuity filter over all three. Depth alone misses coplanar plates;
+normals alone miss two different parts that happen to face the same way. The per-vertex
+`partId` attribute closes both gaps — `/?subject=box` exists to show exactly that: the seam
+between the two flush plates is produced by the id channel and nothing else.
+
+## Versioning
+
+Asset versioning is the cache-busting token, not a bundler hash (there is no bundler).
+
+```bash
+npm run bust      # bump the token; rewrites ?v= on every asset URL, the <meta name="cb">, the favicon
+npm run watch     # re-bump on every source save (opt-in; not started by npm start)
+```
+
+The corner badge and the tab favicon change shape and colour on every bump, so "did my change
+actually load?" is answerable without opening devtools.
+
+The token only reaches the browser because `server/serve.js` sets the headers to match:
+
+| response | Cache-Control |
+|---|---|
+| HTML | `no-cache, no-store, must-revalidate` |
+| URL carrying `?v=` | `public, max-age=31536000, immutable` |
+| everything else | `no-cache` |
+
+Without that pairing the fingerprints are decoration: the browser never refetches the HTML that
+carries the new URLs. **Known limitation:** only `index.html`'s own asset references get
+fingerprinted. ES module imports inside `src/**` are not rewritten, so they fall into the third
+row and revalidate on every load. Correct, but not free — a real deploy should either bundle or
+fingerprint the module graph.
+
+**Gotcha:** `scripts/bust.sh` rewrites `<meta name="cb" content="...">` in *every* file it
+walks, not just HTML. Do not write that tag as a literal in source; assemble it. See the last
+test in `test/invariants.test.js`.
+
+## Installable and offline
+
+It is a PWA: manifest, hand-rolled service worker, icons including a maskable one, and the iOS
+head tags. Precached cold, it runs with no network at all — the geometry is generated at load,
+so once the runtime is cached there is no content left to fetch.
+
+Workbox is not used. There is no bundler to run `injectManifest` in, and the precache list is
+~30 known static files, so Workbox would have been the larger dependency.
+
+**The service worker's cache name is the cache-bust token.** There is exactly one version
+number in this project. `scripts/bust.sh` stamps it into `sw.js` on every bump, old caches are
+deleted on activate, and `npm test` fails if the SW token ever stops matching `index.html` —
+because a drifted SW token pins every installed user to the build they first cached, forever,
+and nothing else in the system would notice.
+
+The worker never calls `skipWaiting()` on its own. A new build waits, the app shows a toast,
+and only on consent does it message the worker and reload on `controllerchange`. Swapping the
+module graph under a live WebGL context mid-orbit is how PWAs earn their reputation.
+
+Install: Chrome/Android get a real button wired to `beforeinstallprompt`; iOS Safari gets a
+Share-sheet hint, because there is no programmatic install there and a button that does nothing
+is worse than none.
+
+## Verifying
+
+```bash
+npm test          # scene-graph invariants — names, pivots, instancing, UVs, explode, boundaries
+```
+
+These assert the properties the spec calls the deliverable, not pixels. A screenshot test would
+assert the display mode, which is explicitly not the asset.
+
+For anything needing a live WebGL context there is a headless harness that drives Chrome over
+CDP using nothing but Node's built-in WebSocket:
+
+```bash
+# start Chrome once
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new \
+  --remote-debugging-port=9222 --enable-unsafe-swiftshader \
+  --use-angle=swiftshader --user-data-dir=/tmp/cb-profile about:blank &
+
+npm run shot -- http://127.0.0.1:5173/ /tmp/iso.png
+npm run shot -- http://127.0.0.1:5173/ /tmp/exp.png "$(cat test/export-probe.js)"
+
+VIEWPORT=390x844 DPR=3 MOBILE=1 npm run shot -- http://127.0.0.1:5173/ /tmp/phone.png
+PWA=1 OFFLINE=1 npm run shot -- http://127.0.0.1:5173/ /tmp/offline.png
+```
+
+It reports console errors (shader compile failures land there) alongside the screenshot.
+
+| env | effect |
+|---|---|
+| `VIEWPORT=WxH`, `DPR`, `MOBILE=1` | device emulation, including a coarse pointer |
+| `PWA=1` | keep the service worker (default: unregister it and clear caches first) |
+| `OFFLINE=1` | cut the network after first load, so the reload is served by the worker |
+
+`PWA=1` is not the default for a reason that cost an hour: once installed, the worker serves the
+module graph stale-while-revalidate, so a screenshot taken right after an edit shows the
+*previous* build and the fix looks like it did nothing. Correct SW behaviour; useless in a
+harness. `OFFLINE=1` cuts the network rather than killing the dev server — a dead socket is a
+different failure from no network.
+
+## Phase status
+
+| Phase | State |
+|---|---|
+| 1 — geometry | done. Hierarchy, pivots at mechanical origins, instanced running gear, separate collision proxy, stored explode vectors. |
+| 2 — blueprint shader | done. Prototyped against primitives first; that rig is kept at `?subject=box`. |
+| 3 — camera | done. Ortho elevations, perspective iso, snap-and-crossfade across projection types. |
+| 4 — chrome | done, subject-driven. Pointing it at something other than a tank is a new file in `src/subjects/`, not a layout change. |
+| 5 — export | partial. GLB round-trips correctly: spec node names survive, `Turret_Pivot.translation` is `[0, 1.66, -0.35]`, `Barrel_Pivot` stays its child at the trunnion, TEXCOORD_1 is present, wheels survive as `EXT_mesh_gpu_instancing`. **Nothing has imported it into a second engine**, so "engine-portable" is a well-formed-file claim, not a tested rigging claim. No LOD tiers. |
+
+Two questions from the spec are still open and are recorded in `.deban/roles/pm.md`: whether
+this is a real MBT or a fictional vehicle (the spec instructs both), and whether the shipped
+artifact is the generator code or the exported GLB.

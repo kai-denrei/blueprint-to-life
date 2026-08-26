@@ -1,0 +1,19 @@
+{
+  "name": "blueprint-to-life",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Procedural tank scene graph + blueprint schematic viewer (Three.js, no build step)",
+  "scripts": {
+    "start": "node server/serve.js",
+    "vendor": "node scripts/vendor-three.js",
+    "icons": "node scripts/make-icons.js",
+    "bust": "bash scripts/bust.sh",
+    "watch": "bash scripts/watch.sh",
+    "test": "node test/invariants.test.js",
+    "shot": "node scripts/shot.js"
+  },
+  "devDependencies": {
+    "three": "^0.180.0"
+  }
+}

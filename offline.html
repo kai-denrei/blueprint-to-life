@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Offline — MK VI Doomforge</title>
+<link rel="icon" type="image/png" href="/icons/icon-192.png?v=f48f4e75">
+<style>
+  :root { --paper: #e8eef6; --ink: #14314f; --mid: #53749c; --faint: #9fb6d2; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: grid; place-content: center;
+    padding: 32px;
+    background: var(--paper);
+    background-image:
+      linear-gradient(var(--faint) 1px, transparent 1px),
+      linear-gradient(90deg, var(--faint) 1px, transparent 1px);
+    background-size: 14px 14px;
+    color: var(--ink);
+    font: 13px/1.6 ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    letter-spacing: 0.04em;
+  }
+  .sheet {
+    max-width: 30rem;
+    padding: 26px 28px 24px;
+    background: rgba(232, 238, 246, 0.92);
+    border: 1px solid rgba(20, 49, 79, 0.34);
+  }
+  h1 { margin: 0 0 2px; font-size: 19px; letter-spacing: 0.14em; }
+  .sub { margin: 0 0 18px; font-size: 9px; letter-spacing: 0.18em; color: var(--mid); }
+  p { margin: 0 0 12px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid rgba(20,49,79,.34); margin-top: 18px; }
+  .cell { padding: 7px 9px; border-right: 1px solid rgba(20,49,79,.34); font-size: 9px; }
+  .cell:last-child { border-right: 0; }
+  .k { display: block; color: var(--faint); letter-spacing: 0.14em; font-size: 8px; }
+  button {
+    font: inherit; font-size: 10px; letter-spacing: 0.14em;
+    margin-top: 18px; padding: 8px 14px;
+    color: var(--paper); background: var(--ink);
+    border: 1px solid var(--ink); cursor: pointer;
+  }
+</style>
+</head>
+<body>
+  <div class="sheet">
+    <h1>NO CONNECTION</h1>
+    <p class="sub">SHEET UNAVAILABLE · DWG BTL-0001</p>
+    <p>This sheet was not in the offline cache. Everything the viewer needs is precached on
+       install, so an installed copy renders the vehicle with no network at all — this page
+       means the app was opened before the first install completed, or the cache was cleared.</p>
+    <p>Reconnect and reload once; after that it works offline.</p>
+    <div class="grid">
+      <div class="cell"><span class="k">DWG</span>BTL-0001</div>
+      <div class="cell"><span class="k">STATUS</span>OFFLINE</div>
+      <div class="cell"><span class="k">SHEET</span>1 OF 1</div>
+    </div>
+    <button onclick="location.replace('/')">RETRY</button>
+  </div>
+</body>
+</html>
