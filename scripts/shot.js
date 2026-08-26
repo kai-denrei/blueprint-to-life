@@ -65,6 +65,15 @@ await sleep(1200);
 // the service worker. This is the Playwright context.setOffline equivalent; killing the dev
 // server is not — it leaves the browser able to reach a dead socket, which is a different
 // failure than having no network at all.
+// The HTTP cache is a second staleness path, separate from the service worker. GitHub Pages
+// serves HTML with max-age=600, so a browser profile that loaded the page minutes ago keeps
+// serving the old build back to the harness even after the worker is unregistered — which is
+// exactly how a verified-live check reported a previous build as current.
+if (process.env.PWA !== '1') {
+  await cdp.send('Network.clearBrowserCache');
+  await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
+}
+
 if (process.env.OFFLINE === '1') {
   await cdp.send('Network.emulateNetworkConditions', {
     offline: true, latency: 0, downloadThroughput: 0, uploadThroughput: 0,
