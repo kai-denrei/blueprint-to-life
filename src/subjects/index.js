@@ -1,5 +1,6 @@
 import { MKVI_SUBJECT } from './mkvi.js';
 import { MKCX_SUBJECT } from './mkcx.js';
+import { HEPTAT_SUBJECT } from './heptat.js';
 import { HOWITZER_SUBJECT } from './howitzer.js';
 import { BOX_SUBJECT } from './box.js';
 
@@ -12,6 +13,7 @@ import { BOX_SUBJECT } from './box.js';
 export const SUBJECTS = {
   mkvi: { label: 'MK-VI', subject: MKVI_SUBJECT },
   mkcx: { label: 'MK-CX', subject: MKCX_SUBJECT },
+  heptat: { label: 'HEPTA-T', subject: HEPTAT_SUBJECT },
   howitzer: { label: 'HOWITZER', subject: HOWITZER_SUBJECT },
   box: { label: 'BOX RIG', subject: BOX_SUBJECT },
 };

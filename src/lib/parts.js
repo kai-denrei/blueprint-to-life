@@ -14,7 +14,19 @@ import * as THREE from 'three';
  * 2. Every explodable node records its rest position and an explode offset vector. The explode
  *    view is `rest + t * offset` — no keyframes anywhere, so adding a part later cannot break
  *    the animation.
+ *
+ * 3. Parts may declare an emissive *channel*, written as a per-vertex `emissive` attribute.
+ *    The blueprint pass reads it out of a spare G-buffer channel; the PBR path reads the
+ *    equivalent off the material. A renderer that ignores it draws the part normally.
+ *
+ *    It is a channel rather than a boolean because the second vehicle with glowing parts wanted
+ *    a different colour. "Which accent channel is this part on" is a fact about the vehicle;
+ *    what channel 2 looks like is a decision for whoever is drawing it. Putting the colour
+ *    itself in the asset would have moved display state back into the geometry.
  */
+
+/** Emissive channels. The value is what lands in the vertex attribute. */
+export const EMISSIVE = { none: 0, primary: 1, secondary: 2 };
 
 let nextId = 1;
 
@@ -27,10 +39,11 @@ export function resetPartIds() {
  * @param {object} [opts]
  * @param {[number,number,number]} [opts.explode]  offset applied at full explode, in parent space
  * @param {boolean} [opts.explodable=true]
- * @param {boolean} [opts.emissive=false]  part is a powered/lit element
+ * @param {boolean|'primary'|'secondary'} [opts.emissive=false]  powered element, and on which channel
  */
 export function registerPart(object, opts = {}) {
   const { explode = [0, 0, 0], explodable = true, emissive = false } = opts;
+  const channel = emissive === true ? EMISSIVE.primary : (EMISSIVE[emissive] ?? EMISSIVE.none);
 
   if (object.isMesh && object.geometry && !object.geometry.getAttribute('partId')) {
     const count = object.geometry.getAttribute('position').count;
@@ -44,8 +57,8 @@ export function registerPart(object, opts = {}) {
     // meshes and not others is the same trap the discharger tubes fell into: WebGL substitutes
     // a default and the render looks almost right.
     object.geometry.setAttribute('emissive',
-      new THREE.BufferAttribute(new Float32Array(count).fill(emissive ? 1 : 0), 1));
-    object.userData.emissive = emissive;
+      new THREE.BufferAttribute(new Float32Array(count).fill(channel), 1));
+    object.userData.emissive = channel;
   }
 
   if (explodable) {

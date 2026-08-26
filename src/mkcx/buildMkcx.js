@@ -143,7 +143,7 @@ function buildHoverGear(M) {
       );
       emitter.name = `LiftEmitter_${tag}${i + 1}`;
       emitter.position.set(side * h.nacelle.centreX, 0.02, z);
-      group.add(registerPart(emitter, { explode: [side * 0.8, -1.1, 0], emissive: true }));
+      group.add(registerPart(emitter, { explode: [side * 0.8, -1.1, 0], emissive: 'primary' }));
     });
 
     // Pylons tying the nacelle to the sponson, so it does not read as floating alongside.
@@ -358,7 +358,7 @@ function buildHullDetails(M) {
     // vertex is at (noseZ, sponsonY + 0.26), so anything placed AT that vertex touches the
     // hull at a single edge and reads as detached.
     light.position.set(side * 1.06, h.sponsonY + 0.20, h.noseZ - 0.28);
-    g.add(registerPart(light, { explode: [side * 0.6, 0.4, 1.3], emissive: true }));
+    g.add(registerPart(light, { explode: [side * 0.6, 0.4, 1.3], emissive: 'primary' }));
   }
 
   const grille = new THREE.Mesh(
@@ -412,6 +412,6 @@ function strips(parent, defs, prefix, material) {
     const mesh = new THREE.Mesh(finish(new THREE.BoxGeometry(w, hgt, d).toNonIndexed()), material);
     mesh.name = `${prefix}_${i + 1}`;
     mesh.position.set(x, y, z);
-    parent.add(registerPart(mesh, { explode: [x * 1.2, 0.6, 0], emissive: true }));
+    parent.add(registerPart(mesh, { explode: [x * 1.2, 0.6, 0], emissive: 'primary' }));
   });
 }

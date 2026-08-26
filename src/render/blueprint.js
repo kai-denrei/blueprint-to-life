@@ -65,9 +65,10 @@ const GBUFFER_FRAG = /* glsl */`
     float nl = clamp(dot(n, normalize(uLightDir)) * 0.5 + 0.5, 0.0, 1.0);
     float band = floor(nl * 4.0) / 3.0;
 
-    // Alpha carries "this part is powered". gInk.rgb is the printed body of the part and gNormalId
-    // is fully spoken for, so the emissive flag rides in the one channel nothing else wanted.
-    gInk = vec4(mix(uInkDark, uInkLight, clamp(band, 0.0, 1.0)), vEmissive);
+    // Alpha carries which accent channel this part is on, scaled so the halffloat target holds
+    // it cleanly. gInk.rgb is the printed body of the part and gNormalId is fully spoken for,
+    // so this rides in the one channel nothing else wanted.
+    gInk = vec4(mix(uInkDark, uInkLight, clamp(band, 0.0, 1.0)), vEmissive * 0.25);
   }
 `;
 
@@ -102,7 +103,8 @@ const COMPOSITE_FRAG = /* glsl */`
   uniform float uOutlineWidth;
   uniform float uHighlightId;   // -1 when nothing is highlighted
   uniform vec3  uAccent;
-  uniform vec3  uGlow;
+  uniform vec3  uGlow;        // accent channel 1
+  uniform vec3  uGlow2;       // accent channel 2
 
   out vec4 fragColor;
 
@@ -178,10 +180,13 @@ const COMPOSITE_FRAG = /* glsl */`
     vec4 ink = texture(tInk, vUv);
     if (hasGeo) {
       col = mix(paper, ink.rgb, uFillOpacity);
-      // Powered elements print in a third hue. This is a deliberate exception to the
-      // two-blues-and-paper restraint: on a schematic, "this part is energised" is a category
-      // of information, not decoration, and it is the one thing a blue-on-blue fill cannot say.
-      col = mix(col, uGlow, ink.a * 0.82);
+      // Powered elements print in an accent hue. A deliberate exception to the
+      // two-blues-and-paper restraint: on a schematic "this part is energised" is a category of
+      // information, not decoration, and it is the one thing a blue-on-blue fill cannot say.
+      // Two channels, so a vehicle can distinguish its systems — or simply have its own accent.
+      int chan = int(floor(ink.a * 4.0 + 0.5));
+      if (chan == 1) col = mix(col, uGlow, 0.82);
+      else if (chan >= 2) col = mix(col, uGlow2, 0.82);
     }
     // Legend hover highlight. Resolved from the part-id channel, so it costs nothing at the
     // asset end: no per-mesh material swap, no second draw.
@@ -205,6 +210,7 @@ export const BLUEPRINT_PALETTE = {
   outline:   0x14314f,
   accent:    0xd06a2a,
   glow:      0x8b46c9,
+  glow2:     0x1f8fd0,
 };
 
 export class BlueprintRenderer {
@@ -267,6 +273,7 @@ export class BlueprintRenderer {
         uHighlightId: { value: -1 },
         uAccent: { value: new THREE.Color(this.palette.accent) },
         uGlow: { value: new THREE.Color(this.palette.glow) },
+        uGlow2: { value: new THREE.Color(this.palette.glow2) },
       },
     });
 

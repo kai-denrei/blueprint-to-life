@@ -36,5 +36,9 @@ export function createMaterials() {
       name: 'M_Glow', color: 0x2a2130, roughness: 0.4, metalness: 0.0,
       emissive: 0xc44ff0, emissiveIntensity: 2.6, flatShading: true,
     }),
+    glow2: new THREE.MeshStandardMaterial({
+      name: 'M_Glow2', color: 0x18242e, roughness: 0.4, metalness: 0.0,
+      emissive: 0x2fb6ff, emissiveIntensity: 2.4, flatShading: true,
+    }),
   };
 }

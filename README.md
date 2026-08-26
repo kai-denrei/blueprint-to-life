@@ -3,8 +3,9 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Three subjects so far — the **MK-VI** main battle tank, the **MK-CX** (a forward projection of
-it), and an M777-pattern 155 mm towed howitzer — plus a primitives rig for debugging the shader.
+Four subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the **Hepta-T**
+6×6 cargo transport, and an M777-pattern 155 mm towed howitzer — plus a primitives rig for
+debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -22,6 +23,8 @@ npm start             # http://127.0.0.1:5173/
 - `/` — MK-VI main battle tank
 - `/?subject=mkcx` — MK-CX, the forward projection: no running gear at all, lift nacelles with
   emissive emitters, a compact main turret and two secondary turrets tucked under the bore line
+- `/?subject=heptat` — Hepta-T, a 6×6 industrial hauler: steered front axle, deploying tail
+  ramp, blue accent lighting, and a deck of stowage that is deliberately not tidy
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -43,6 +46,7 @@ keep updating whether open or not, so there is no second code path for small scr
 src/lib/        shared asset generators — geometry, materials, part registry
 src/tank/       asset: MK-VI main battle tank
 src/mkcx/       asset: MK-CX
+src/heptat/     asset: Hepta-T
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -52,7 +56,7 @@ src/pwa/        registration, update-on-consent, install prompt, connectivity
 server/serve.js static server with the cache-control split the busting layer needs
 ```
 
-Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/howitzer`) must not import from display code, and
+Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/howitzer`) must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -72,6 +76,11 @@ was acceptable. The addition is a **generic capability the asset declares data f
 like `partId` before it — `registerPart(mesh, { emissive: true })` writes an attribute, and a
 renderer that ignores the attribute draws the part normally. What would *not* have been
 acceptable is `if (subject.id === 'mkcx')` anywhere in `src/render/`.
+
+The Hepta-T then wanted the same effect in blue, which turned the boolean into a **channel**:
+`registerPart(mesh, { emissive: 'secondary' })`. Which accent channel a part is on is a fact
+about the vehicle; what channel 2 *looks* like is a decision for whoever is drawing it. Putting
+the colour itself in the asset would have moved display state back into the geometry.
 
 The give-away that it landed on the right side of the line: the PBR path expresses the same
 fact through `MeshStandardMaterial.emissive`, and neither display mode reads the other's
@@ -173,6 +182,28 @@ module graph under a live WebGL context mid-orbit is how PWAs earn their reputat
 Install: Chrome/Android get a real button wired to `beforeinstallprompt`; iOS Safari gets a
 Share-sheet hint, because there is no programmatic install there and a button that does nothing
 is worse than none.
+
+### Making something look lived-in, procedurally
+
+The Hepta-T's brief included "believable, lived-in", which is a texturing word — and there are
+no textures here. The blueprint pass renders flat ink; wear, grime and paint chips are simply
+unavailable. So it had to become structural: things that *accumulated* rather than things that
+were *designed*.
+
+Two techniques carry it. The first is asymmetry — the ladder is on one side, the spare wheel and
+toolbox on the other, the fuel cans on one flank only. A vehicle whose every part is mirrored
+reads as a product render no matter how much detail it has.
+
+The second is a seeded jitter on every stowed item's position and cant. Crates strapped down by
+hand do not line up, and a grid of perfectly aligned boxes reads as cargo the modeller placed
+rather than cargo a crew threw on. Critically it is a small LCG seeded from a constant, not
+`Math.random()`: the scene graph is the deliverable and has to be byte-identical every build, or
+the invariants go flaky and an exported GLB stops matching the one before it. *Random-looking*
+and *random* are different requirements and only the first one is wanted.
+
+There is an invariant for both halves — that the jitter source is reproducible, and that the
+crates do not all share a rotation, which is what "the jitter silently stopped applying" looks
+like.
 
 ### What the MK-CX broke
 

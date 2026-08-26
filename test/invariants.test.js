@@ -16,6 +16,8 @@ import { buildTank } from '../src/tank/buildTank.js';
 import { DIM, wheelLayout } from '../src/tank/dimensions.js';
 import { buildMkcx } from '../src/mkcx/buildMkcx.js';
 import { CXDIM } from '../src/mkcx/dimensions.js';
+import { buildHeptat } from '../src/heptat/buildHeptat.js';
+import { HTDIM, rng } from '../src/heptat/dimensions.js';
 import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
 import { HDIM, trailLayout } from '../src/howitzer/dimensions.js';
 import { applyExplode, collectExplodable } from '../src/lib/parts.js';
@@ -31,6 +33,7 @@ function test(name, fn) {
 
 const tank = buildTank();
 const mkcx = buildMkcx();
+const heptat = buildHeptat();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -62,6 +65,13 @@ const MODELS = [
     pivots: ['Turret_Pivot', 'Barrel_Pivot',
              'Secondary_L_Pivot', 'Secondary_R_Pivot',
              'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
+  },
+  {
+    name: 'heptat', root: heptat, rootName: 'HeptaT_Root', collision: 'Chassis_Collision', wheels: true,
+    required: ['Chassis_Mesh', 'Chassis_Collision', 'Cab_Mesh', 'CargoBay_Mesh',
+               'Ramp_Pivot', 'Ramp_Mesh', 'Turret_Pivot', 'Turret_Mesh',
+               'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
+    pivots: ['Turret_Pivot', 'Barrel_Pivot', 'Ramp_Pivot', 'Steer_Wheel_1L', 'Steer_Wheel_1R'],
   },
   {
     name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', wheels: true,
@@ -293,6 +303,49 @@ test('[mkcx] the secondary turrets clear the main gun bore line', () => {
     `secondary tops out at ${secTop.toFixed(2)} but the bore is at ${boreY.toFixed(2)}`);
 });
 
+test('[heptat] the tail ramp reaches the ground when fully deployed', () => {
+  // Length and hinge height are coupled: L*cos(open) must equal -hingeY or the ramp stops in
+  // mid-air. It did, on the first pass. Either number can be nudged later without the other.
+  const c = HTDIM.cargo;
+  const hinge = c.y0 + 0.02;
+  const tip = hinge + c.ramp.height * Math.cos((c.ramp.open * Math.PI) / 180);
+  assert.ok(Math.abs(tip) < 0.08, `ramp tip lands at y=${tip.toFixed(3)}, not on the ground`);
+});
+
+test('[heptat] stowage is asymmetric and jittered — deterministically', () => {
+  // "Lived-in" is structural here: things a crew accumulated, not things a designer mirrored.
+  // Both halves of that matter. Perfect mirroring reads as a product render; a non-deterministic
+  // jitter would make the scene graph — the actual deliverable — differ between builds.
+  const a = rng(HTDIM.stowage.seed);
+  const b = rng(HTDIM.stowage.seed);
+  assert.deepEqual([a(), a(), a()], [b(), b(), b()], 'the jitter source must be reproducible');
+
+  const named = [];
+  heptat.traverse((o) => { if (o.name) named.push(o.name); });
+  for (const solo of ['SpareWheel', 'Toolbox', 'CableReel']) {
+    assert.ok(named.includes(solo), `missing ${solo}`);
+    assert.ok(!named.includes(`${solo}_L`) && !named.includes(`${solo}_R`),
+      `${solo} should exist once, not as a mirrored pair`);
+  }
+
+  // Crates must not share a rotation — that would mean the jitter never applied.
+  const crates = [];
+  heptat.traverse((o) => { if (/^Crate_/.test(o.name)) crates.push(o.rotation.y); });
+  assert.ok(crates.length >= 4, 'expected several stowed crates');
+  assert.ok(new Set(crates.map((r) => r.toFixed(6))).size === crates.length,
+    'every crate has the same cant, so the jitter is not being applied');
+});
+
+test('[heptat] the steered axle is the only one that turns', () => {
+  const layout = heptat.getObjectByName('Wheels_Instanced').userData.layout;
+  const steered = layout.filter((l) => l.steers);
+  assert.equal(steered.length, 2, 'exactly one axle should steer');
+  assert.ok(steered.every((l) => l.axle === HTDIM.wheel.steerAxle));
+  for (const l of steered) {
+    assert.ok(heptat.getObjectByName(`Steer_${l.name}`), `no carrier for ${l.name}`);
+  }
+});
+
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
@@ -366,7 +419,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="38ff0326">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="625dc146">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];
