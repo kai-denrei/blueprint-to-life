@@ -3,9 +3,9 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Four subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the **Hepta-T**
-6×6 cargo transport, and an M777-pattern 155 mm towed howitzer — plus a primitives rig for
-debugging the shader.
+Five subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the **Hepta-T**
+6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, and an M777-pattern 155 mm
+towed howitzer — plus a primitives rig for debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -25,6 +25,9 @@ npm start             # http://127.0.0.1:5173/
   emissive emitters, a compact main turret and two secondary turrets tucked under the bore line
 - `/?subject=heptat` — Hepta-T, a 6×6 industrial hauler: steered front axle, deploying tail
   ramp, blue accent lighting, and a deck of stowage that is deliberately not tidy
+- `/?subject=heptapod` — Heptapod Walker, an eight-legged autonomous sentry: a 30 mm rail gun
+  on a gyro ring, twenty-four driven limb pivots behind two sliders, and a ride height that is
+  computed from the legs rather than authored
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -47,6 +50,7 @@ src/lib/        shared asset generators — geometry, materials, part registry
 src/tank/       asset: MK-VI main battle tank
 src/mkcx/       asset: MK-CX
 src/heptat/     asset: Hepta-T
+src/heptapod/   asset: Heptapod Walker
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -56,7 +60,8 @@ src/pwa/        registration, update-on-consent, install prompt, connectivity
 server/serve.js static server with the cache-control split the busting layer needs
 ```
 
-Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/howitzer`) must not import from display code, and
+Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/howitzer`)
+must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -222,6 +227,53 @@ Two more invariants came out of the same change: that the lowest geometry actual
 ground (otherwise it is resting, not hovering), and that the secondary turrets stay below the
 main gun's bore line — a design constraint that is easy to violate later with a small tweak and
 that shows up as a silhouette collision rather than an error.
+
+### What the walker cost
+
+The Heptapod Walker is the first subject that added **no renderer capability at all**, and that
+is the interesting result rather than a boring one. It is an eight-legged sentry with
+twenty-four driven limb pivots, a ride height that changes as it crouches, and two accent
+channels — and the blueprint pass, the composite, the camera and the chrome are byte-identical
+to what they were before it existed. Two asset files, one descriptor, one entry in the registry.
+
+Three things made that possible, and each one was already there for a different reason:
+
+**A joint fans out.** Twenty-four limb pivots are not twenty-four sliders. A joint maps one
+range onto *every* target it names, which the Hepta-T's steer joint already used for two hub
+carriers; STANCE is the same declaration with thirty-two targets and STRIDE is it with eight.
+The viewer builds one slider per joint and has no idea it is folding a leg.
+
+**The pose table is a midpoint.** STANCE runs crouch-to-extend and its default of 50 has to land
+on the machine's rest posture, so `neutral` is not authored — it is the midpoint of the other
+two, and an invariant says so. Author a third pose freehand and the walker silently stops
+resting at the height every figure in the title block was derived from.
+
+**`afterArticulate` carries the ride height.** A tank's hull height is a number; a walker's is a
+consequence of where it put its feet. Fold the legs and the hull has to come down with them, and
+no parent transform can express that — the legs are children of the thing that has to move. So
+the ride height is solved from three angles every frame, exactly the escape hatch the howitzer's
+trail-mounted wheels and the Hepta-T's steered axle needed. The invariant that matters is that
+all eight pads sit on y = 0 at every stance, because a walker that floats a centimetre is
+invisible in a still and obvious the moment anything casts a shadow.
+
+The one genuinely new thing is a shared generator, `taperedBeam` — a limb is a box with two
+different ends, and `extrudeProfile` extrudes along X, so authoring a limb with it would have
+put the segment's rest orientation in a transform instead of in the pose table.
+
+**What it deliberately does not do is instance its feet.** Eight pads are the most-repeated part
+on the machine and look like the obvious `InstancedMesh`, which is what the Hepta-T's six wheels
+are. They are not the same case: six wheels are six copies of one static transform, whereas
+every foot here carries a different articulated one, and instance matrices cannot inherit a
+parent's. Instancing them would mean recomputing eight world matrices from eight sockets every
+frame to replace eight parent transforms the scene graph was already doing for free. The
+contract's `wheels` flag — added for the MK-CX, which hovers — is what lets a subject say that
+without a checklist forcing decorative geometry into existence.
+
+On the name: the reference sheet the brief came from is titled *Heptapod*, annotates its leg
+callout `(7x)`, and then draws eight legs. It is concept art, not a blueprint, and the brief
+resolved it in favour of the drawing. The designation is carried as a programme name and the leg
+count is stated on its own line in the title block, which is what a real drawing would do with an
+inherited name that stopped describing the thing.
 
 ## Deployed
 

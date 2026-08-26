@@ -156,6 +156,50 @@ export function trackBand(circles, opts = {}) {
   return finish(geom);
 }
 
+/**
+ * Tapered beam along +Z, from z = 0 to z = length.
+ *
+ * The legged subject needed this and nothing here could make it: `extrudeProfile` extrudes
+ * along X, so a limb segment authored with it would have had to be rotated into place, which
+ * puts the segment's rest orientation in a transform instead of in its geometry. A limb is a
+ * box whose two ends are different sizes and whose far end may be cranked off-axis — six quads,
+ * no more — so it is its own generator rather than a special case of the extruder.
+ *
+ * @param {object} opts
+ * @param {number} opts.length
+ * @param {number} opts.w0  width at the near end   @param {number} opts.h0  height at the near end
+ * @param {number} opts.w1  width at the far end    @param {number} opts.h1  height at the far end
+ * @param {number} [opts.dx=0]  lateral offset of the far end (a cranked segment)
+ * @param {number} [opts.dy=0]  vertical offset of the far end
+ */
+export function taperedBeam({ length, w0, h0, w1 = w0, h1 = h0, dx = 0, dy = 0 }) {
+  const near = [
+    [-w0 / 2, -h0 / 2, 0], [w0 / 2, -h0 / 2, 0], [w0 / 2, h0 / 2, 0], [-w0 / 2, h0 / 2, 0],
+  ];
+  const far = [
+    [dx - w1 / 2, dy - h1 / 2, length], [dx + w1 / 2, dy - h1 / 2, length],
+    [dx + w1 / 2, dy + h1 / 2, length], [dx - w1 / 2, dy + h1 / 2, length],
+  ];
+
+  const pos = [], uv = [];
+  const quad = (a, b, c, d) => {
+    tri(pos, uv, a, b, c, [0, 0], [1, 0], [1, 1]);
+    tri(pos, uv, a, c, d, [0, 0], [1, 1], [0, 1]);
+  };
+
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4;
+    quad(near[i], near[j], far[j], far[i]);   // one side per profile edge
+  }
+  quad(near[3], near[2], near[1], near[0]);   // near cap
+  quad(far[0], far[1], far[2], far[3]);       // far cap
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return finish(geom);
+}
+
 /** Lathe a 2D profile ([radius, z]) about the Z axis — used for the barrel/muzzle silhouette. */
 export function latheZ(profile, segments = 24) {
   const pts = profile.map(([r, z]) => new THREE.Vector2(r, z));

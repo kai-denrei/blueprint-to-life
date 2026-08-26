@@ -8,6 +8,7 @@
  * Run: npm test
  */
 import assert from 'node:assert/strict';
+import * as THREE from 'three';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +19,8 @@ import { buildMkcx } from '../src/mkcx/buildMkcx.js';
 import { CXDIM } from '../src/mkcx/dimensions.js';
 import { buildHeptat } from '../src/heptat/buildHeptat.js';
 import { HTDIM, rng } from '../src/heptat/dimensions.js';
+import { buildHeptapod, updateHeptapodStance } from '../src/heptapod/buildHeptapod.js';
+import { HPDIM, legSolve, legLayout, footSpan } from '../src/heptapod/dimensions.js';
 import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
 import { HDIM, trailLayout } from '../src/howitzer/dimensions.js';
 import { applyExplode, collectExplodable } from '../src/lib/parts.js';
@@ -34,6 +37,7 @@ function test(name, fn) {
 const tank = buildTank();
 const mkcx = buildMkcx();
 const heptat = buildHeptat();
+const heptapod = buildHeptapod();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -72,6 +76,18 @@ const MODELS = [
                'Ramp_Pivot', 'Ramp_Mesh', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Turret_Pivot', 'Barrel_Pivot', 'Ramp_Pivot', 'Steer_Wheel_1L', 'Steer_Wheel_1R'],
+  },
+  {
+    // A walker: no wheels, and its ride height is leg state rather than a dimension. The
+    // required list therefore names the leg chain, because "the legs exist and are articulated"
+    // is this subject's equivalent of "the running gear is instanced".
+    name: 'heptapod', root: heptapod, rootName: 'Heptapod_Root', collision: 'Hull_Collision', wheels: false,
+    required: ['Body_Group', 'Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
+               'Barrel_Pivot', 'Barrel_Mesh', 'Details_Group', 'Reactor_Mesh',
+               'Sensor_Suite_Mesh', 'Lidar_Array', 'Leg_1L_Mount', 'Leg_4R_Tibia',
+               'FootPad_1L', 'Arm_Shoulder_Pivot', 'Arm_Elbow_Pivot'],
+    pivots: ['Turret_Pivot', 'Barrel_Pivot', 'Leg_1L_Hip', 'Leg_1L_Coxa', 'Leg_3R_Femur',
+             'Leg_4L_Tibia', 'Foot_2R_Ankle', 'Arm_Shoulder_Pivot', 'Arm_Elbow_Pivot'],
   },
   {
     name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', wheels: true,
@@ -346,6 +362,144 @@ test('[heptat] the steered axle is the only one that turns', () => {
   }
 });
 
+console.log('\nthe walker — ride height is leg state, not a dimension');
+
+/** Drive one declared joint to a value, exactly as main.js does, and run the subject fix-up. */
+function setJoint(root, key, value, after) {
+  const j = root.userData.joints.find((x) => x.key === key);
+  const t = (value - j.min) / (j.max - j.min);
+  for (const target of j.targets) {
+    const node = root.getObjectByName(target.node);
+    node.rotation[target.axis] =
+      ((target.from + t * (target.to - target.from)) * Math.PI) / 180;
+  }
+  after?.(root);
+  root.updateMatrixWorld(true);
+}
+
+/** Lowest world Y of each foot pad. */
+function footContacts(root) {
+  const out = [];
+  root.traverse((o) => {
+    if (!/^FootPad_/.test(o.name)) return;
+    o.geometry.computeBoundingBox();
+    out.push(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld).min.y);
+  });
+  return out;
+}
+
+test('[heptapod] neutral pose is the midpoint of crouch and extend', () => {
+  // The STANCE slider maps min..max linearly onto each target, so its default of 50 lands on
+  // the rest posture only if neutral IS the midpoint. Author a third pose freehand and the
+  // machine silently stops resting at the height every title-block figure was derived from.
+  const { crouch, neutral, extend } = HPDIM.leg.pose;
+  neutral.forEach((v, i) => {
+    assert.equal(Number(((crouch[i] + extend[i]) / 2).toFixed(6)), v,
+      `pose limb ${i}: neutral is not halfway between crouch and extend`);
+  });
+});
+
+test('[heptapod] all eight feet are on the ground at every stance', () => {
+  // The one thing a walker must not get wrong. Ride height is written by afterArticulate from
+  // the leg angles; if that ever drifts from the geometry the machine either floats or sinks,
+  // and neither is visible in a still until someone looks at the shadow.
+  for (const v of [0, 25, 50, 75, 100]) {
+    setJoint(heptapod, 'stance', v, updateHeptapodStance);
+    const contacts = footContacts(heptapod);
+    assert.equal(contacts.length, 8, 'expected eight foot pads');
+    for (const y of contacts) {
+      assert.ok(Math.abs(y) < 0.002,
+        `stance ${v}: a foot pad sits at y=${y.toFixed(4)}, not on the ground`);
+    }
+  }
+});
+
+test('[heptapod] folding the legs actually lowers the hull', () => {
+  const heights = [];
+  for (const v of [0, 50, 100]) {
+    setJoint(heptapod, 'stance', v, updateHeptapodStance);
+    heights.push(heptapod.getObjectByName('Body_Group').position.y);
+  }
+  assert.ok(heights[0] < heights[1] && heights[1] < heights[2],
+    `ride height should rise with stance, got ${heights.map((h) => h.toFixed(3)).join(' / ')}`);
+  assert.ok(heights[2] - heights[0] > 0.5, 'the stance range is too small to be worth a slider');
+  setJoint(heptapod, 'stance', 50, updateHeptapodStance);
+  assert.equal(
+    Number(heptapod.getObjectByName('Body_Group').position.y.toFixed(6)),
+    Number(legSolve(HPDIM.leg.pose.neutral).hipHeight.toFixed(6)),
+    'the rest height the drawing quotes is not the height the graph produces',
+  );
+});
+
+test('[heptapod] the stride keeps an alternating tetrapod', () => {
+  // Four legs swing while four stand, and the two sets alternate along each flank — that is
+  // what keeps a statically stable machine statically stable mid-stride. It is a parity in
+  // legLayout(), which is exactly the kind of thing that survives a refactor by accident.
+  const legs = legLayout();
+  assert.equal(legs.length, 8, 'eight legs');
+  const sets = { A: legs.filter((l) => l.tetrad === 'A'), B: legs.filter((l) => l.tetrad === 'B') };
+  assert.equal(sets.A.length, 4);
+  assert.equal(sets.B.length, 4);
+  for (const side of [-1, 1]) {
+    const flank = legs.filter((l) => l.side === side).map((l) => l.tetrad).join('');
+    assert.ok(flank === 'ABAB' || flank === 'BABA', `flank ${side} is not alternating: ${flank}`);
+  }
+  for (const l of legs) {
+    const opposite = legs.find((o) => o.index === l.index && o.side === -l.side);
+    assert.notEqual(l.tetrad, opposite.tetrad, `${l.name} and its pair are in the same set`);
+  }
+
+  const stride = heptapod.userData.joints.find((j) => j.key === 'stride');
+  assert.equal(stride.targets.length, 8, 'one hip per leg');
+  setJoint(heptapod, 'stride', stride.max);
+  const yaws = legs.map((l) => heptapod.getObjectByName(`${l.name}_Hip`).rotation.y);
+  assert.ok(yaws.some((y) => y > 0) && yaws.some((y) => y < 0),
+    'at full stride the two sets should be swung opposite ways');
+  setJoint(heptapod, 'stride', 0);
+});
+
+test('[heptapod] every leg is its own geometry, not eight clones of one', () => {
+  // Cloning a registered geometry across eight legs would give them one shared part id, and the
+  // outline pass would stop drawing the seam wherever two legs cross. Cheap to do by accident,
+  // invisible until two limbs overlap on screen.
+  const geoms = new Set();
+  let segments = 0;
+  heptapod.traverse((o) => {
+    if (!o.isMesh || !/^(Coxa|Femur|Tibia|FootPad)_/.test(o.name)) return;
+    segments++;
+    geoms.add(o.geometry);
+  });
+  assert.equal(segments, 32, 'expected four segments on each of eight legs');
+  assert.equal(geoms.size, 32, 'leg segments share geometry, so they share a part id');
+});
+
+test('[heptapod] the quoted span is the span the graph produces', () => {
+  // Width and length are the foot circle, not a hull dimension — so they are derived, and this
+  // is what stops the title block drifting from the machine after a limb-length change.
+  setJoint(heptapod, 'stance', 50, updateHeptapodStance);
+  const feet = [];
+  heptapod.traverse((o) => {
+    if (/^FootPad_/.test(o.name)) feet.push(o.getWorldPosition(new THREE.Vector3()));
+  });
+  const [declaredW, declaredL] = footSpan(HPDIM.leg.pose.neutral);
+  const xs = feet.map((f) => f.x), zs = feet.map((f) => f.z);
+  assert.ok(Math.abs((Math.max(...xs) - Math.min(...xs)) - declaredW) < 0.02,
+    `width: solve says ${declaredW.toFixed(3)}, graph says ${(Math.max(...xs) - Math.min(...xs)).toFixed(3)}`);
+  assert.ok(Math.abs((Math.max(...zs) - Math.min(...zs)) - declaredL) < 0.02,
+    `length: solve says ${declaredL.toFixed(3)}, graph says ${(Math.max(...zs) - Math.min(...zs)).toFixed(3)}`);
+});
+
+test('[heptapod] the sentry is lit on both accent channels', () => {
+  // The weapon and the reactor are on channel 1, the sensors and the pads on channel 2. A
+  // subject that put everything on one channel would render, and would have thrown away the
+  // distinction the channel exists to carry.
+  const channels = new Set();
+  heptapod.traverse((o) => {
+    if (o.isMesh && o.userData.emissive) channels.add(o.userData.emissive);
+  });
+  assert.deepEqual([...channels].sort(), [1, 2], 'expected parts on both accent channels');
+});
+
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
@@ -388,7 +542,7 @@ console.log('\nasset / display boundary');
 
 test('asset code never imports from display code', () => {
   const offenders = [];
-  const assetDirs = ['lib', 'tank', 'howitzer'].map((d) => join(ROOT, 'src', d));
+  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'howitzer'].map((d) => join(ROOT, 'src', d));
   for (const file of assetDirs.flatMap(walk)) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
@@ -419,7 +573,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="625dc146">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="08c7ff48">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];
