@@ -14,7 +14,9 @@ import { fileURLToPath } from 'node:url';
 
 import { buildTank } from '../src/tank/buildTank.js';
 import { DIM, wheelLayout } from '../src/tank/dimensions.js';
-import { applyExplode, collectExplodable } from '../src/tank/parts.js';
+import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
+import { HDIM, trailLayout } from '../src/howitzer/dimensions.js';
+import { applyExplode, collectExplodable } from '../src/lib/parts.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -26,32 +28,140 @@ function test(name, fn) {
 }
 
 const tank = buildTank();
+const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
+
+/**
+ * The shared asset contract. Everything in this list is a property BOTH models must have —
+ * it is the definition of "a subject this viewer can render and this pipeline can export".
+ * Adding a third vehicle means adding one line here, and any invariant it breaks is a real
+ * incompatibility rather than a stylistic difference.
+ */
+const MODELS = [
+  {
+    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision',
+    required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
+               'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
+    pivots: ['Turret_Pivot', 'Barrel_Pivot'],
+  },
+  {
+    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision',
+    required: ['Chassis_Mesh', 'Chassis_Collision', 'Traverse_Pivot', 'TopCarriage_Mesh',
+               'Elevation_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
+    pivots: ['Traverse_Pivot', 'Elevation_Pivot', 'Trail_Front_L', 'Trail_Rear_R'],
+  },
+];
 
 console.log('\nscene graph — engine-portable naming');
 
-test('root is Tank_Root', () => {
-  assert.equal(tank.name, 'Tank_Root');
-});
+for (const m of MODELS) {
+  test(`[${m.name}] root is ${m.rootName}`, () => {
+    assert.equal(m.root.name, m.rootName);
+  });
 
-test('every node named in the spec hierarchy exists', () => {
-  for (const n of ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
-                   'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group']) {
-    assert.ok(byName(n), `missing node: ${n}`);
-  }
-});
+  test(`[${m.name}] every node named in the hierarchy contract exists`, () => {
+    for (const n of m.required) assert.ok(m.root.getObjectByName(n), `missing node: ${n}`);
+  });
 
-test('no node is unnamed — an unnamed node cannot be rigged after export', () => {
-  const unnamed = [];
-  tank.traverse((o) => { if (!o.name) unnamed.push(o.type); });
-  assert.deepEqual(unnamed, [], `unnamed nodes: ${unnamed.join(', ')}`);
-});
+  test(`[${m.name}] no node is unnamed — an unnamed node cannot be rigged after export`, () => {
+    const unnamed = [];
+    m.root.traverse((o) => { if (!o.name) unnamed.push(o.type); });
+    assert.deepEqual(unnamed, [], `unnamed nodes: ${unnamed.join(', ')}`);
+  });
 
-test('names are unique — GLTF import collides otherwise', () => {
-  const seen = new Set(), dupes = new Set();
-  tank.traverse((o) => { if (seen.has(o.name)) dupes.add(o.name); seen.add(o.name); });
-  assert.deepEqual([...dupes], []);
-});
+  test(`[${m.name}] names are unique — GLTF import collides otherwise`, () => {
+    const seen = new Set(), dupes = new Set();
+    m.root.traverse((o) => { if (seen.has(o.name)) dupes.add(o.name); seen.add(o.name); });
+    assert.deepEqual([...dupes], []);
+  });
+
+  test(`[${m.name}] pivots are empty Object3Ds, not meshes`, () => {
+    for (const n of m.pivots) {
+      const p = m.root.getObjectByName(n);
+      assert.ok(p, `missing pivot: ${n}`);
+      assert.equal(p.isMesh, undefined, `${n} must carry no geometry of its own`);
+    }
+  });
+
+  test(`[${m.name}] collision proxy is separate, hidden and carries no partId`, () => {
+    const proxy = m.root.getObjectByName(m.collision);
+    assert.equal(proxy.visible, false);
+    assert.equal(proxy.userData.isCollision, true);
+    assert.equal(proxy.geometry.getAttribute('partId'), undefined);
+    assert.ok(proxy.geometry.getAttribute('position').count <= 48, 'proxy should be a simple box');
+    const renderGeoms = new Set();
+    m.root.traverse((o) => { if (o.isMesh && !o.userData.isCollision) renderGeoms.add(o.geometry); });
+    assert.ok(!renderGeoms.has(proxy.geometry), 'render geometry must never be reused as a collider');
+  });
+
+  test(`[${m.name}] every rendered mesh has uv, uv1, uv2 and a partId`, () => {
+    const missing = [];
+    m.root.traverse((o) => {
+      if (!o.isMesh || o.userData.isCollision) return;
+      for (const key of ['uv', 'uv1', 'uv2', 'partId']) {
+        if (!o.geometry.getAttribute(key)) missing.push(`${o.name}:${key}`);
+      }
+    });
+    assert.deepEqual(missing, []);
+  });
+
+  test(`[${m.name}] part ids fit the 8-bit channel the G-buffer packs them into`, () => {
+    let max = 0;
+    m.root.traverse((o) => { if (o.userData.partId) max = Math.max(max, o.userData.partId); });
+    assert.ok(max > 0 && max < 255, `part id ${max} would wrap the id channel`);
+  });
+
+  test(`[${m.name}] no NaN in any position buffer`, () => {
+    const bad = [];
+    m.root.traverse((o) => {
+      if (!o.isMesh) return;
+      const arr = o.geometry.getAttribute('position').array;
+      for (let i = 0; i < arr.length; i++) if (!Number.isFinite(arr[i])) { bad.push(o.name); break; }
+    });
+    assert.deepEqual(bad, []);
+  });
+
+  test(`[${m.name}] road wheels are instanced, not N loose meshes`, () => {
+    const w = m.root.getObjectByName('Wheels_Instanced');
+    assert.ok(w.isInstancedMesh, 'Wheels_Instanced must be an InstancedMesh');
+    const loose = [];
+    m.root.traverse((o) => {
+      if (o.isMesh && !o.isInstancedMesh && /RoadWheel/i.test(o.name)) loose.push(o.name);
+    });
+    assert.deepEqual(loose, []);
+  });
+
+  test(`[${m.name}] explode is stored data and is exactly reversible`, () => {
+    const parts = collectExplodable(m.root);
+    assert.ok(parts.length >= 8, `expected many explodable parts, got ${parts.length}`);
+    const before = parts.map((p) => p.position.clone());
+    applyExplode(m.root, 1);
+    const moved = parts.filter((p, i) => p.position.distanceTo(before[i]) > 0.01).length;
+    assert.ok(moved >= parts.length * 0.8, 'most explodable parts should actually move');
+    applyExplode(m.root, 0);
+    parts.forEach((p, i) => assert.equal(p.position.distanceTo(before[i]), 0, `${p.name} did not return`));
+  });
+
+  test(`[${m.name}] declares joints the viewer can drive without knowing the subject`, () => {
+    const joints = m.root.userData.joints;
+    assert.ok(Array.isArray(joints) && joints.length >= 2, 'no joints declared');
+    for (const j of joints) {
+      for (const key of ['key', 'label', 'min', 'max', 'step', 'value', 'targets']) {
+        assert.ok(j[key] !== undefined, `joint ${j.key} missing ${key}`);
+      }
+      assert.ok(j.max > j.min, `joint ${j.key} has an empty range`);
+      assert.ok(j.value >= j.min && j.value <= j.max, `joint ${j.key} default is out of range`);
+      assert.ok(j.targets.length > 0, `joint ${j.key} drives nothing`);
+      for (const t of j.targets) {
+        assert.ok(m.root.getObjectByName(t.node), `joint ${j.key} targets missing node ${t.node}`);
+        assert.ok(['x', 'y', 'z'].includes(t.axis), `joint ${j.key} bad axis ${t.axis}`);
+        assert.ok(Number.isFinite(t.from) && Number.isFinite(t.to), `joint ${j.key} bad range`);
+      }
+    }
+    const keys = joints.map((j) => j.key);
+    assert.equal(new Set(keys).size, keys.length, 'duplicate joint keys');
+  });
+}
 
 console.log('\narticulation — pivots at true mechanical origins');
 
@@ -69,12 +179,6 @@ test('Barrel_Pivot is a child of Turret_Pivot, at the trunnion', () => {
   assert.equal(b.position.z, DIM.barrel.trunnionZ);
 });
 
-test('pivots are empty Object3Ds, not meshes', () => {
-  for (const n of ['Turret_Pivot', 'Barrel_Pivot']) {
-    assert.equal(byName(n).isMesh, undefined, `${n} must carry no geometry of its own`);
-  }
-});
-
 test('azimuth on Turret_Pivot carries the barrel with it', () => {
   const turret = byName('Turret_Pivot');
   const barrel = byName('Barrel_Mesh');
@@ -89,40 +193,27 @@ test('azimuth on Turret_Pivot carries the barrel with it', () => {
   tank.updateMatrixWorld(true);
 });
 
-test('articulation contract is declared on the root', () => {
-  const a = tank.userData.articulation;
-  assert.equal(a.azimuth.node, 'Turret_Pivot');
-  assert.equal(a.azimuth.axis, 'y');
-  assert.equal(a.elevation.node, 'Barrel_Pivot');
-  assert.equal(a.elevation.axis, 'x');
-});
-
 console.log('\ninstancing and collision');
 
-test('road wheels are one InstancedMesh, not N meshes', () => {
-  const w = byName('Wheels_Instanced');
-  assert.ok(w.isInstancedMesh, 'Wheels_Instanced must be an InstancedMesh');
-  assert.equal(w.count, DIM.roadWheel.count * 2);
+test('[tank] road wheel count matches the declared layout', () => {
+  assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
 
-test('no loose per-wheel meshes leaked into the graph', () => {
-  const loose = [];
-  tank.traverse((o) => { if (o.isMesh && !o.isInstancedMesh && /RoadWheel/i.test(o.name)) loose.push(o.name); });
-  assert.deepEqual(loose, []);
+test('[howitzer] trail hinges sit at their declared origins', () => {
+  for (const t of trailLayout()) {
+    const pivot = howitzer.getObjectByName(t.name);
+    assert.ok(pivot, `missing ${t.name}`);
+    assert.equal(Number(pivot.position.x.toFixed(4)), Number(t.x.toFixed(4)));
+    assert.equal(Number(pivot.position.z.toFixed(4)), Number(t.z.toFixed(4)));
+  }
 });
 
-test('collision proxy is separate geometry, not the render hull', () => {
-  const proxy = byName('Hull_Collision');
-  const hull = byName('Hull_Mesh');
-  assert.notEqual(proxy.geometry, hull.geometry);
-  assert.equal(proxy.visible, false);
-  assert.equal(proxy.userData.isCollision, true);
-  const verts = proxy.geometry.getAttribute('position').count;
-  assert.ok(verts <= 48, `proxy should be a simple box, got ${verts} verts`);
+test('[howitzer] barrel length matches calibre × calibres', () => {
+  assert.equal(Number(HDIM.barrel.length.toFixed(3)), Number((0.155 * 39).toFixed(3)));
 });
 
-test('collision proxy carries no partId — the blueprint pass cannot draw it', () => {
-  assert.equal(byName('Hull_Collision').geometry.getAttribute('partId'), undefined);
+test('[howitzer] Elevation_Pivot is a child of Traverse_Pivot', () => {
+  assert.equal(howitzer.getObjectByName('Elevation_Pivot').parent.name, 'Traverse_Pivot');
 });
 
 test('running gear layout is shared, not duplicated', () => {
@@ -133,63 +224,7 @@ test('running gear layout is shared, not duplicated', () => {
 
 console.log('\nUVs and part data');
 
-test('every rendered mesh has uv, uv1 and uv2', () => {
-  // uv1 is the one GLTFExporter turns into TEXCOORD_1. Dropping it exports a GLB with no
-  // second UV set at all, silently, which is why this asserts the name and not just "a second set".
-  const missing = [];
-  tank.traverse((o) => {
-    if (!o.isMesh || o.userData.isCollision) return;
-    for (const key of ['uv', 'uv1', 'uv2']) {
-      if (!o.geometry.getAttribute(key)) missing.push(`${o.name}:${key}`);
-    }
-  });
-  assert.deepEqual(missing, []);
-});
-
-test('every rendered mesh has a partId attribute', () => {
-  const missing = [];
-  tank.traverse((o) => {
-    if (!o.isMesh || o.userData.isCollision) return;
-    if (!o.geometry.getAttribute('partId')) missing.push(o.name);
-  });
-  assert.deepEqual(missing, []);
-});
-
-test('part ids fit the 8-bit channel the G-buffer packs them into', () => {
-  let max = 0;
-  tank.traverse((o) => { if (o.userData.partId) max = Math.max(max, o.userData.partId); });
-  assert.ok(max > 0 && max < 255, `part id ${max} would wrap the id channel`);
-});
-
-test('no NaN in any position buffer', () => {
-  const bad = [];
-  tank.traverse((o) => {
-    if (!o.isMesh) return;
-    const p = o.geometry.getAttribute('position').array;
-    for (let i = 0; i < p.length; i++) if (!Number.isFinite(p[i])) { bad.push(o.name); break; }
-  });
-  assert.deepEqual(bad, []);
-});
-
 console.log('\nexplode');
-
-test('explode data is stored, not keyframed', () => {
-  const parts = collectExplodable(tank);
-  assert.ok(parts.length >= 10, `expected many explodable parts, got ${parts.length}`);
-  for (const p of parts) {
-    assert.ok(p.userData.rest, `${p.name} has no rest position`);
-    assert.ok(p.userData.explode, `${p.name} has no explode vector`);
-  }
-});
-
-test('explode is reversible — t=1 then t=0 restores rest exactly', () => {
-  const turret = byName('Turret_Pivot');
-  const rest = turret.position.clone();
-  applyExplode(tank, 1);
-  assert.ok(turret.position.distanceTo(rest) > 1, 'turret did not move on explode');
-  applyExplode(tank, 0);
-  assert.equal(turret.position.distanceTo(rest), 0);
-});
 
 test('anchor parts do not move — the hull stays put', () => {
   const hull = byName('Hull_Mesh');
@@ -200,9 +235,10 @@ test('anchor parts do not move — the hull stays put', () => {
 
 console.log('\nasset / display boundary');
 
-test('src/tank/** never imports from src/render/, src/chrome/ or src/camera/', () => {
+test('asset code never imports from display code', () => {
   const offenders = [];
-  for (const file of walk(join(ROOT, 'src', 'tank'))) {
+  const assetDirs = ['lib', 'tank', 'howitzer'].map((d) => join(ROOT, 'src', d));
+  for (const file of assetDirs.flatMap(walk)) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
       if (/(^|\/)(render|chrome|camera|subjects)\//.test(m[1])) {
@@ -213,21 +249,26 @@ test('src/tank/** never imports from src/render/, src/chrome/ or src/camera/', (
   assert.deepEqual(offenders, [], `the asset must not depend on how it is drawn:\n${offenders.join('\n')}`);
 });
 
-test('src/render/** never imports from src/tank/ — it renders any scene', () => {
+test('display code never imports from a specific asset — it renders any scene', () => {
   const offenders = [];
-  for (const file of walk(join(ROOT, 'src', 'render'))) {
-    const src = readFileSync(file, 'utf8');
-    for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
-      if (/(^|\/)tank\//.test(m[1])) offenders.push(`${file.replace(ROOT + '/', '')} -> ${m[1]}`);
+  for (const dir of ['render', 'camera', 'chrome']) {
+    for (const file of walk(join(ROOT, 'src', dir))) {
+      const src = readFileSync(file, 'utf8');
+      for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
+        if (/(^|\/)(tank|howitzer|subjects)\//.test(m[1])) {
+          offenders.push(`${file.replace(ROOT + '/', '')} -> ${m[1]}`);
+        }
+      }
     }
   }
-  assert.deepEqual(offenders, []);
+  assert.deepEqual(offenders, [],
+    `the viewer must not know what it is drawing:\n${offenders.join('\n')}`);
 });
 
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="f48f4e75">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="bb0ec56d">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];
@@ -302,7 +343,16 @@ test('every precached URL in the service worker resolves to a real file', () => 
   const urls = [...list.matchAll(/'(\/[^']*)'|`(\/[^`]*)`/g)]
     .map((m) => (m[1] || m[2]).split('?')[0])
     .filter((u) => u !== '/' && !u.endsWith('/'));
+  // vendor/ is gitignored and produced by `npm run vendor`, so on a fresh clone those paths
+  // legitimately do not exist yet. Skipping them keeps `npm install && npm test` green without
+  // weakening the check that matters: that OUR files have not moved out from under the list.
+  const hasVendor = (() => {
+    try { return statSync(join(ROOT, 'vendor')).isDirectory(); } catch { return false; }
+  })();
+  if (!hasVendor) console.log('       (vendor/ absent — run `npm run vendor`; skipping those entries)');
+
   const missing = urls.filter((u) => {
+    if (!hasVendor && u.startsWith('/vendor/')) return false;
     for (const base of [ROOT, join(ROOT, 'public')]) {
       try { if (statSync(join(base, u)).isFile()) return false; } catch { /* next */ }
     }

@@ -1,11 +1,14 @@
 # blueprint-to-life
 
-A tank built entirely from code as a Three.js scene graph, rendered two ways: as a technical
+Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
+Two subjects so far — a main battle tank and an M777-pattern 155 mm towed howitzer — plus a
+primitives rig for debugging the shader.
+
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
-never baked into the asset — toggling display modes touches nothing under `src/tank/`, and a
-test enforces that.
+never baked into the asset — toggling display modes touches nothing under `src/tank/` or
+`src/howitzer/`, and a test enforces that.
 
 ## Run it
 
@@ -17,7 +20,10 @@ npm start             # http://127.0.0.1:5173/
 ```
 
 - `/` — the tank
+- `/?subject=howitzer` — the 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
+
+Or use the SUBJECT row in the controls panel.
 
 Keys: `1`–`6` views · `b` blueprint/PBR · `c` collision proxy · `h` hide chrome.
 
@@ -29,16 +35,50 @@ keep updating whether open or not, so there is no second code path for small scr
 ## Layout
 
 ```
-src/tank/       the asset — geometry, dimensions, materials, part registry
+src/lib/        shared asset generators — geometry, materials, part registry
+src/tank/       asset: main battle tank
+src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
 src/chrome/     schematic overlay (title block, legend, instruments, callouts)
-src/subjects/   what the chrome and the app are pointed at — tank.js, box.js
+src/subjects/   what the app is pointed at — tank.js, howitzer.js, box.js
+src/pwa/        registration, update-on-consent, install prompt, connectivity
 server/serve.js static server with the cache-control split the busting layer needs
 ```
 
-`src/tank/` must not import from `src/render/`, `src/chrome/` or `src/camera/`, and
-`src/render/` must not import from `src/tank/`. `npm test` fails the build if either happens.
+Asset code (`src/lib`, `src/tank`, `src/howitzer`) must not import from display code, and
+display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
+asset. `npm test` fails the build if either happens.
+
+## Adding a subject
+
+The howitzer was the test of whether the tank's architecture was worth anything. It cost two
+new files (`src/howitzer/**`) and one descriptor (`src/subjects/howitzer.js`). The chrome, the
+blueprint pass, the camera controller and the export path were not touched.
+
+What makes that possible is that articulation is **declared on the scene graph**, not coded
+into the viewer:
+
+```js
+root.userData.joints = [
+  { key: 'elevation', label: 'ELEVATE', unit: '°', min: 0, max: 71.7, step: 0.5, value: 0,
+    targets: [{ node: 'Elevation_Pivot', axis: 'x', from: 0, to: -71.7 }] },
+];
+```
+
+A joint maps one slider's `min..max` linearly onto each target's `from..to`, in degrees. The
+indirection earns its keep immediately: `rotation.x` positive pitches a gun *down*, so the
+gunner's number and the scene's number have opposite signs, and that belongs with the vehicle
+rather than in the viewer. The viewer builds one slider per joint and knows nothing about
+turret rings, trunnions or trail hinges.
+
+The howitzer's third joint swings four trail hinges from a towing package to a firing
+cruciform — a mechanism the tank does not have, which required no viewer code at all.
+
+Subjects may also declare `afterArticulate(root)` for fix-ups the scene graph cannot express.
+The howitzer needs one: its two road wheels are a single `InstancedMesh` (the same contract the
+tank's running gear follows) but they are mounted on two independently hinging trails, and
+instance matrices cannot be inherited from different parents.
 
 ## How the blueprint pass works
 
@@ -115,6 +155,10 @@ is worse than none.
 npm test          # scene-graph invariants — names, pivots, instancing, UVs, explode, boundaries
 ```
 
+The structural invariants are parameterised over every model, so they define what "a subject
+this pipeline can render and export" means rather than describing one vehicle. Adding a third
+is one line in `MODELS`, and anything it breaks is a real incompatibility.
+
 These assert the properties the spec calls the deliverable, not pixels. A screenshot test would
 assert the display mode, which is explicitly not the asset.
 
@@ -157,6 +201,15 @@ different failure from no network.
 | 3 — camera | done. Ortho elevations, perspective iso, snap-and-crossfade across projection types. |
 | 4 — chrome | done, subject-driven. Pointing it at something other than a tank is a new file in `src/subjects/`, not a layout change. |
 | 5 — export | partial. GLB round-trips correctly: spec node names survive, `Turret_Pivot.translation` is `[0, 1.66, -0.35]`, `Barrel_Pivot` stays its child at the trunnion, TEXCOORD_1 is present, wheels survive as `EXT_mesh_gpu_instancing`. **Nothing has imported it into a second engine**, so "engine-portable" is a well-formed-file claim, not a tested rigging claim. No LOD tiers. |
+
+### On reference material
+
+Geometry is derived from published dimensional specifications — for the howitzer: 155 mm L/39
+(so a 6.045 m tube), 10.7 m towed length, 2.77 m towed width, 0° to +71.7° elevation, ±22.5°
+on-carriage traverse. Those are facts about the object. The reference imagery supplied for the
+build was a watermarked stock illustration and a copyrighted technical diagram, neither of
+which was traced; the spec treats blueprints as a proportion sanity-check, and published
+figures serve that purpose without copying anyone's line art.
 
 Two questions from the spec are still open and are recorded in `.deban/roles/pm.md`: whether
 this is a real MBT or a fictional vehicle (the spec instructs both), and whether the shipped

@@ -8,10 +8,11 @@
     "start": "node server/serve.js",
     "vendor": "node scripts/vendor-three.js",
     "icons": "node scripts/make-icons.js",
-    "bust": "bash scripts/bust.sh",
+    "bust": "node scripts/gen-precache.js && bash scripts/bust.sh",
     "watch": "bash scripts/watch.sh",
     "test": "node test/invariants.test.js",
-    "shot": "node scripts/shot.js"
+    "shot": "node scripts/shot.js",
+    "precache": "node scripts/gen-precache.js"
   },
   "devDependencies": {
     "three": "^0.180.0"

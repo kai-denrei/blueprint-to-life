@@ -5,12 +5,13 @@ import { BlueprintRenderer } from './render/blueprint.js';
 import { createGround, createLighting } from './render/pbr.js';
 import { ViewController, VIEWS } from './camera/viewController.js';
 import { SchematicChrome } from './chrome/schematic.js';
-import { applyExplode, collectExplodable } from './tank/parts.js';
+import { applyExplode, collectExplodable } from './lib/parts.js';
 import { TANK_SUBJECT } from './subjects/tank.js';
+import { HOWITZER_SUBJECT } from './subjects/howitzer.js';
 import { BOX_SUBJECT } from './subjects/box.js';
 import { isStandalone, registerServiceWorker, setupInstallPrompt, watchConnectivity } from './pwa/lifecycle.js';
 
-const SUBJECTS = { tank: TANK_SUBJECT, box: BOX_SUBJECT };
+const SUBJECTS = { tank: TANK_SUBJECT, howitzer: HOWITZER_SUBJECT, box: BOX_SUBJECT };
 
 const params = new URLSearchParams(location.search);
 const subject = SUBJECTS[params.get('subject')] || TANK_SUBJECT;
@@ -53,11 +54,16 @@ const views = new ViewController(canvas, {
   onCrossfade: () => chrome.crossfade(),
 });
 
+/**
+ * Joints are whatever the subject declared. main.js knows the *shape* of a joint — a slider
+ * range remapped onto node rotations — and nothing about what any particular one means.
+ */
+const joints = root.userData.joints || [];
+const jointValues = Object.fromEntries(joints.map((j) => [j.key, j.value]));
+
 const state = {
   mode: 'blueprint',
   explode: 0,
-  azimuth: 0,
-  elevation: 0,
   showCollision: false,
 };
 
@@ -70,6 +76,7 @@ const chrome = new SchematicChrome({
   root: app,
   subject,
   views: VIEWS,
+  joints,
   handlers: {
     onView: (key) => { views.setView(key); chrome.setActiveView(key); },
     onMode: (key) => setMode(key),
@@ -78,8 +85,12 @@ const chrome = new SchematicChrome({
       applyExplode(root, v);
       views.setFrameScale(1 + v * 0.95);
     },
-    onAzimuth: (deg) => { state.azimuth = deg; },
-    onElevation: (deg) => { state.elevation = deg; },
+    onJoint: (key, value) => { jointValues[key] = value; },
+    onSubject: (key) => {
+      const next = new URL(location.href);
+      next.searchParams.set('subject', key);
+      location.assign(next);
+    },
     onHighlight: (nodeName) => {
       const id = nodeName ? nodeToPartId.get(nodeName) : undefined;
       blueprint.set('uHighlightId', id == null ? -1 : id);
@@ -105,12 +116,32 @@ if (initialView && VIEWS[initialView]) {
 
 // --- articulation ----------------------------------------------------------
 
-const turretPivot = root.getObjectByName('Turret_Pivot');
-const barrelPivot = root.getObjectByName('Barrel_Pivot');
+// Resolve node references once. Doing it per frame would be a getObjectByName tree walk on
+// every joint target, every frame, for no benefit — the graph does not gain nodes at runtime.
+const resolvedJoints = joints.map((j) => ({
+  ...j,
+  targets: j.targets
+    .map((t) => ({ ...t, object: root.getObjectByName(t.node) }))
+    .filter((t) => {
+      if (!t.object) console.warn(`[joints] ${j.key}: no node named ${t.node}`);
+      return t.object;
+    }),
+}));
 
 function applyArticulation() {
-  if (turretPivot) turretPivot.rotation.y = THREE.MathUtils.degToRad(state.azimuth);
-  if (barrelPivot) barrelPivot.rotation.x = THREE.MathUtils.degToRad(-state.elevation);
+  for (const j of resolvedJoints) {
+    const span = j.max - j.min;
+    const t = span === 0 ? 0 : (jointValues[j.key] - j.min) / span;
+    for (const target of j.targets) {
+      target.object.rotation[target.axis] = THREE.MathUtils.degToRad(
+        target.from + t * (target.to - target.from),
+      );
+    }
+  }
+  // Some subjects need a fix-up after their joints move — the howitzer's road wheels are one
+  // InstancedMesh but are mounted on two independently hinging trails, so their instance
+  // matrices cannot simply be inherited from a parent transform.
+  subject.afterArticulate?.(root);
 }
 
 // --- modes -----------------------------------------------------------------
@@ -146,9 +177,15 @@ let frames = 0, fpsAcc = 0, fps = 0;
 function updateReadouts(dt) {
   frames++; fpsAcc += dt;
   if (fpsAcc >= 0.5) { fps = frames / fpsAcc; frames = 0; fpsAcc = 0; }
+  const jointReadouts = {};
+  for (const j of joints) {
+    jointReadouts[j.key] = j.unit === '°'
+      ? signed(jointValues[j.key], 1, '°', 5)
+      : jointValues[j.key].toFixed(2);
+  }
+
   chrome.setReadouts({
-    azimuth: signed(state.azimuth, 1, '°', 5),
-    elevation: signed(state.elevation, 1, '°', 4),
+    ...jointReadouts,
     explode: state.explode.toFixed(2),
     view: VIEWS[views.viewKey].label,
     mode: state.mode === 'pbr' ? 'GAME / PBR' : 'BLUEPRINT',
@@ -192,7 +229,7 @@ addEventListener('keydown', (e) => {
     setMode(state.mode === 'blueprint' ? 'pbr' : 'blueprint');
   } else if (e.key === 'c') {
     state.showCollision = !state.showCollision;
-    const proxy = root.getObjectByName('Hull_Collision');
+    const proxy = root.getObjectByName('Hull_Collision') || root.getObjectByName('Chassis_Collision');
     if (proxy) proxy.visible = state.showCollision;
   } else if (e.key === 'h') {
     app.classList.toggle('hide-chrome');
@@ -211,7 +248,7 @@ function exportGLB() {
   // Reset articulation and explode so the exported rest pose is the authored one.
   const savedExplode = state.explode;
   applyExplode(root, 0);
-  const proxy = root.getObjectByName('Hull_Collision');
+  const proxy = root.getObjectByName('Hull_Collision') || root.getObjectByName('Chassis_Collision');
   const proxyWasVisible = proxy?.visible;
   if (proxy) proxy.visible = true;    // the proxy must survive export; visibility is display state
 

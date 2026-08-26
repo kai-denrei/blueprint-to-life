@@ -59,7 +59,7 @@ export const TANK_SUBJECT = {
     { label: 'ROAD WHEELS', value: `${DIM.roadWheel.count} / SIDE` },
     { label: 'GUN LENGTH', value: '4.98 m' },
     { label: 'AZIMUTH', key: 'azimuth', value: '+000.0°' },
-    { label: 'ELEVATION', key: 'elevation', value: '+00.0°' },
+    { label: 'ELEVATION', key: 'elevation', value: '+000.0°' },
     { label: 'EXPLODE', key: 'explode', value: '0.00' },
     { label: 'VIEW', key: 'view', value: 'ISO' },
     { label: 'DISPLAY', key: 'mode', value: 'BLUEPRINT' },

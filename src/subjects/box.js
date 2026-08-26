@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { registerPart, resetPartIds } from '../tank/parts.js';
-import { finish } from '../tank/geometry.js';
+import { registerPart, resetPartIds } from '../lib/parts.js';
+import { finish } from '../lib/geometry.js';
 
 /**
  * Shader isolation subject — reachable at /?subject=box.

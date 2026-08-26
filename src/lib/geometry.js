@@ -6,7 +6,9 @@
  * blueprint fill and a hard-surface PBR pass want.
  *
  * This module knows nothing about materials, rendering or the blueprint viewer. It must stay
- * that way: src/tank/** is the asset, src/render/** is one way of looking at it.
+ * that way: src/lib + src/tank + src/howitzer are the assets, src/render/** is one way of
+ * looking at them. Shared generators live here so a second vehicle is a new folder, not a
+ * fork of the first one.
  */
 import * as THREE from 'three';
 

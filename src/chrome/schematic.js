@@ -20,10 +20,11 @@ export class SchematicChrome {
    * @param {object} opts.subject         subject descriptor, see src/subjects/*
    * @param {object} opts.handlers        { onView, onMode, onExplode, onAzimuth, onElevation, onExport, onBust }
    */
-  constructor({ root, subject, views, handlers = {} }) {
+  constructor({ root, subject, views, joints = [], handlers = {} }) {
     this.root = root;
     this.subject = subject;
     this.views = views;
+    this.joints = joints;
     this.handlers = handlers;
     this.readoutEls = new Map();
     this.calloutObjects = [];
@@ -179,8 +180,27 @@ export class SchematicChrome {
     box.appendChild(modeRow);
 
     box.appendChild(this._slider('EXPLODE', 0, 1, 0.001, 0, (v) => this.handlers.onExplode?.(v)));
-    box.appendChild(this._slider('AZIMUTH', -180, 180, 1, 0, (v) => this.handlers.onAzimuth?.(v)));
-    box.appendChild(this._slider('ELEVATE', -10, 20, 0.5, 0, (v) => this.handlers.onElevation?.(v)));
+
+    // One slider per declared joint. The viewer has no idea whether it is driving a turret
+    // ring, a trunnion or four trail hinges — the subject's scene graph says what exists and
+    // what its range is, which is why a second vehicle with a different mechanism added no
+    // code here at all.
+    for (const joint of this.joints) {
+      box.appendChild(this._slider(
+        joint.label, joint.min, joint.max, joint.step, joint.value,
+        (v) => this.handlers.onJoint?.(joint.key, v),
+      ));
+    }
+
+    const subjectRow = el('div', 'ctl-row');
+    subjectRow.appendChild(el('span', 'ctl-k', 'SUBJECT'));
+    for (const [key, label] of [['tank', 'TANK'], ['howitzer', 'HOWITZER'], ['box', 'BOX RIG']]) {
+      const b = el('button', 'btn', label);
+      b.classList.toggle('on', key === this.subject.id);
+      b.addEventListener('click', () => this.handlers.onSubject?.(key));
+      subjectRow.appendChild(b);
+    }
+    box.appendChild(subjectRow);
 
     const exportRow = el('div', 'ctl-row');
     exportRow.appendChild(el('span', 'ctl-k', 'ASSET'));

@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 import { DIM, wheelLayout } from './dimensions.js';
-import { extrudeProfile, trackBand, latheZ, mergeNonIndexed, finish } from './geometry.js';
-import { createMaterials } from './materials.js';
-import { registerPart, resetPartIds } from './parts.js';
+import { extrudeProfile, trackBand, latheZ, mergeNonIndexed, finish } from '../lib/geometry.js';
+import { createMaterials } from '../lib/materials.js';
+import { registerPart, resetPartIds } from '../lib/parts.js';
 
 /**
  * Build the tank as a THREE.Object3D hierarchy from primitives. No imported assets.
@@ -31,10 +31,26 @@ export function buildTank() {
   root.add(turret);
   root.add(buildHullDetails(M));
 
-  root.userData.articulation = {
-    azimuth: { node: 'Turret_Pivot', axis: 'y', limits: DIM.limits.azimuth },
-    elevation: { node: 'Barrel_Pivot', axis: 'x', limits: DIM.limits.elevation },
-  };
+  /**
+   * Articulation, declared rather than hard-coded in the app.
+   *
+   * A joint maps one slider onto one or more node rotations: the slider's `min..max` is
+   * remapped linearly onto each target's `from..to`, in degrees. That indirection exists
+   * because `rotation.x` positive pitches the gun *down* — the display value and the scene
+   * value have opposite signs, and burying that in the viewer would mean every new subject
+   * re-derives it. It also means a second vehicle with completely different mechanisms adds
+   * no code to main.js at all.
+   */
+  root.userData.joints = [
+    {
+      key: 'azimuth', label: 'AZIMUTH', unit: '°', min: -180, max: 180, step: 1, value: 0,
+      targets: [{ node: 'Turret_Pivot', axis: 'y', from: -180, to: 180 }],
+    },
+    {
+      key: 'elevation', label: 'ELEVATE', unit: '°', min: -10, max: 20, step: 0.5, value: 0,
+      targets: [{ node: 'Barrel_Pivot', axis: 'x', from: 10, to: -20 }],
+    },
+  ];
   return root;
 }
 

@@ -21,25 +21,33 @@
  * three's own exporter proves the file is well-formed, not that Unity or Unreal rigs it.
  */
 (async () => {
+  // Node names differ per subject; the *contract* does not. Resolve the pivots from the
+  // declared joints so this probe works for any model the viewer can load.
+  const joints = root.userData.joints || [];
+  const azimuthNode = joints.find((j) => j.key === 'azimuth')?.targets[0].node;
+  const elevationNode = joints.find((j) => j.key === 'elevation')?.targets[0].node;
+  const proxy = root.children.find((c) => c.userData.isCollision);
+  if (proxy) proxy.visible = true;
+
   const buf = await new Promise((resolve, reject) => {
-    root.getObjectByName('Hull_Collision').visible = true;
     new GLTFExporter().parse(root, resolve, reject, { binary: true, onlyVisible: false, trs: true });
   });
   const dv = new DataView(buf);
   const jsonLen = dv.getUint32(12, true);
   const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buf, 20, jsonLen)));
   const names = json.nodes.map((n) => n.name);
-  const wanted = ['Tank_Root', 'Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
-                  'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'];
-  const turretIdx = names.indexOf('Turret_Pivot');
-  const barrelIdx = names.indexOf('Barrel_Pivot');
+  const wanted = [root.name, 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group',
+                  azimuthNode, elevationNode, proxy?.name].filter(Boolean);
+  const turretIdx = names.indexOf(azimuthNode);
+  const barrelIdx = names.indexOf(elevationNode);
   return JSON.stringify({
+    subject: root.name,
     kb: Math.round(buf.byteLength / 1024),
     nodeCount: names.length,
     missing: wanted.filter((w) => !names.includes(w)),
-    turretTranslation: json.nodes[turretIdx]?.translation,
-    barrelTranslation: json.nodes[barrelIdx]?.translation,
-    barrelUnderTurret: !!json.nodes[turretIdx]?.children?.includes(barrelIdx),
+    azimuthPivot: [azimuthNode, json.nodes[turretIdx]?.translation],
+    elevationPivot: [elevationNode, json.nodes[barrelIdx]?.translation],
+    elevationUnderAzimuth: !!json.nodes[turretIdx]?.children?.includes(barrelIdx),
     meshes: (json.meshes || []).length,
     hasUV1: JSON.stringify(json.meshes || []).includes('TEXCOORD_1'),
     extensions: json.extensionsUsed || [],
