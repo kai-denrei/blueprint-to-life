@@ -119,7 +119,10 @@ function buildRunningGear(M) {
 
   const bandGeom = trackBand(circles, { thickness: DIM.track.thickness, width: DIM.track.width });
   for (const side of [-1, 1]) {
-    const mesh = new THREE.Mesh(side < 0 ? bandGeom : bandGeom.clone(), M.track);
+    // Cloned BEFORE registration, not after. Registering the first track stamped partId onto
+    // the shared geometry, so the second one's clone arrived already-stamped, silently took the
+    // first's part id, and skipped every attribute registerPart adds after that guard.
+    const mesh = new THREE.Mesh(bandGeom.clone(), M.track);
     mesh.name = side < 0 ? 'Track_L' : 'Track_R';
     mesh.position.x = side * DIM.track.centreX;
     mesh.castShadow = true;

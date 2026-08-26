@@ -6,15 +6,11 @@ import { createGround, createLighting } from './render/pbr.js';
 import { ViewController, VIEWS } from './camera/viewController.js';
 import { SchematicChrome } from './chrome/schematic.js';
 import { applyExplode, collectExplodable } from './lib/parts.js';
-import { TANK_SUBJECT } from './subjects/tank.js';
-import { HOWITZER_SUBJECT } from './subjects/howitzer.js';
-import { BOX_SUBJECT } from './subjects/box.js';
+import { resolveSubject, subjectList } from './subjects/index.js';
 import { isStandalone, registerServiceWorker, setupInstallPrompt, watchConnectivity } from './pwa/lifecycle.js';
 
-const SUBJECTS = { tank: TANK_SUBJECT, howitzer: HOWITZER_SUBJECT, box: BOX_SUBJECT };
-
 const params = new URLSearchParams(location.search);
-const subject = SUBJECTS[params.get('subject')] || TANK_SUBJECT;
+const subject = resolveSubject(params.get('subject')).subject;
 
 const app = document.getElementById('app');
 const canvas = document.getElementById('view');
@@ -75,6 +71,7 @@ root.traverse((o) => {
 const chrome = new SchematicChrome({
   root: app,
   subject,
+  subjects: subjectList(),
   views: VIEWS,
   joints,
   handlers: {

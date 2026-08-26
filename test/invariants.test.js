@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 
 import { buildTank } from '../src/tank/buildTank.js';
 import { DIM, wheelLayout } from '../src/tank/dimensions.js';
+import { buildMkcx } from '../src/mkcx/buildMkcx.js';
+import { CXDIM } from '../src/mkcx/dimensions.js';
 import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
 import { HDIM, trailLayout } from '../src/howitzer/dimensions.js';
 import { applyExplode, collectExplodable } from '../src/lib/parts.js';
@@ -28,6 +30,7 @@ function test(name, fn) {
 }
 
 const tank = buildTank();
+const mkcx = buildMkcx();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -43,6 +46,13 @@ const MODELS = [
     required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Turret_Pivot', 'Barrel_Pivot'],
+  },
+  {
+    name: 'mkcx', root: mkcx, rootName: 'MKCX_Root', collision: 'Hull_Collision',
+    required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
+               'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group',
+               'RWS_Pivot', 'RWS_Gun_Pivot'],
+    pivots: ['Turret_Pivot', 'Barrel_Pivot', 'RWS_Pivot', 'RWS_Gun_Pivot'],
   },
   {
     name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision',
@@ -94,15 +104,30 @@ for (const m of MODELS) {
     assert.ok(!renderGeoms.has(proxy.geometry), 'render geometry must never be reused as a collider');
   });
 
-  test(`[${m.name}] every rendered mesh has uv, uv1, uv2 and a partId`, () => {
+  test(`[${m.name}] every rendered mesh has uv, uv1, uv2, partId and emissive`, () => {
     const missing = [];
     m.root.traverse((o) => {
       if (!o.isMesh || o.userData.isCollision) return;
-      for (const key of ['uv', 'uv1', 'uv2', 'partId']) {
+      for (const key of ['uv', 'uv1', 'uv2', 'partId', 'emissive']) {
         if (!o.geometry.getAttribute(key)) missing.push(`${o.name}:${key}`);
       }
     });
     assert.deepEqual(missing, []);
+  });
+
+  test(`[${m.name}] no two rendered meshes share a part id`, () => {
+    // A shared id means the outline filter cannot tell the two apart, so the seam between them
+    // vanishes. It happened once already, by cloning a geometry that had already been
+    // registered — invisible in that case only because the two parts never touch on screen.
+    const seen = new Map();
+    const clashes = [];
+    m.root.traverse((o) => {
+      if (!o.isMesh || o.userData.isCollision) return;
+      const id = o.userData.partId;
+      if (seen.has(id)) clashes.push(`${seen.get(id)} + ${o.name} both id ${id}`);
+      else seen.set(id, o.name);
+    });
+    assert.deepEqual(clashes, []);
   });
 
   test(`[${m.name}] part ids fit the 8-bit channel the G-buffer packs them into`, () => {
@@ -140,6 +165,13 @@ for (const m of MODELS) {
     assert.ok(moved >= parts.length * 0.8, 'most explodable parts should actually move');
     applyExplode(m.root, 0);
     parts.forEach((p, i) => assert.equal(p.position.distanceTo(before[i]), 0, `${p.name} did not return`));
+  });
+
+  test(`[${m.name}] every declared joint target resolves and is unique`, () => {
+    const joints = m.root.userData.joints;
+    const pairs = joints.flatMap((j) => j.targets.map((t) => `${t.node}.${t.axis}`));
+    assert.equal(new Set(pairs).size, pairs.length,
+      'two joints driving the same node axis fight each other every frame');
   });
 
   test(`[${m.name}] declares joints the viewer can drive without knowing the subject`, () => {
@@ -194,6 +226,30 @@ test('azimuth on Turret_Pivot carries the barrel with it', () => {
 });
 
 console.log('\ninstancing and collision');
+
+test('[mkcx] emissive parts are flagged in the geometry, not just the material', () => {
+  // The blueprint pass has no materials — it renders with an overrideMaterial — so a glow
+  // expressed only as MeshStandardMaterial.emissive would show in the PBR mode and silently
+  // vanish in the schematic. The attribute is what makes both modes agree.
+  const lit = [];
+  mkcx.traverse((o) => {
+    if (o.isMesh && o.userData.emissive) lit.push(o.name);
+  });
+  assert.ok(lit.length >= 8, `expected several emissive parts, got ${lit.length}`);
+  for (const name of lit) {
+    const attr = mkcx.getObjectByName(name).geometry.getAttribute('emissive');
+    assert.ok(attr, `${name} is flagged emissive but has no emissive attribute`);
+    assert.equal(attr.array[0], 1, `${name} emissive attribute is not set`);
+  }
+});
+
+test('[mkcx] deviates from the MK-VI it projects forward from', () => {
+  // It is supposed to be a different vehicle, not a retexture. If these ever converge, the
+  // silhouette claim in the README stopped being true.
+  assert.notEqual(CXDIM.roadWheel.count, DIM.roadWheel.count);
+  assert.ok(CXDIM.hull.length > DIM.hull.length, 'MK-CX should be the longer hull');
+  assert.ok(CXDIM.hull.deckY < DIM.hull.deckY, 'MK-CX should be the lower hull');
+});
 
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
@@ -268,7 +324,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="bb0ec56d">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="a5fb2617">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

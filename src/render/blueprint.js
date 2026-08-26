@@ -21,8 +21,10 @@ import * as THREE from 'three';
 
 const GBUFFER_VERT = /* glsl */`
   attribute float partId;
+  attribute float emissive;
   out vec3 vNormalView;
   out float vPartId;
+  out float vEmissive;
 
   void main() {
     #ifdef USE_INSTANCING
@@ -31,6 +33,7 @@ const GBUFFER_VERT = /* glsl */`
       mat4 im = mat4(1.0);
     #endif
     vPartId = partId;
+    vEmissive = emissive;
     vNormalView = normalize(normalMatrix * mat3(im) * normal);
     vec4 mv = modelViewMatrix * im * vec4(position, 1.0);
     gl_Position = projectionMatrix * mv;
@@ -41,6 +44,7 @@ const GBUFFER_FRAG = /* glsl */`
   precision highp float;
   in vec3 vNormalView;
   in float vPartId;
+  in float vEmissive;
 
   uniform vec3 uInkLight;
   uniform vec3 uInkDark;
@@ -60,7 +64,10 @@ const GBUFFER_FRAG = /* glsl */`
     // Banded flat fill: a schematic reads as drawn, not lit, so the ramp is stepped hard.
     float nl = clamp(dot(n, normalize(uLightDir)) * 0.5 + 0.5, 0.0, 1.0);
     float band = floor(nl * 4.0) / 3.0;
-    gInk = vec4(mix(uInkDark, uInkLight, clamp(band, 0.0, 1.0)), 1.0);
+
+    // Alpha carries "this part is powered". gInk.rgb is the printed body of the part and gNormalId
+    // is fully spoken for, so the emissive flag rides in the one channel nothing else wanted.
+    gInk = vec4(mix(uInkDark, uInkLight, clamp(band, 0.0, 1.0)), vEmissive);
   }
 `;
 
@@ -95,6 +102,7 @@ const COMPOSITE_FRAG = /* glsl */`
   uniform float uOutlineWidth;
   uniform float uHighlightId;   // -1 when nothing is highlighted
   uniform vec3  uAccent;
+  uniform vec3  uGlow;
 
   out vec4 fragColor;
 
@@ -167,8 +175,13 @@ const COMPOSITE_FRAG = /* glsl */`
     bool hasGeo = texture(tDepth, vUv).x < 1.0;
     vec3 paper = gridPaper(gl_FragCoord.xy);
     vec3 col = paper;
+    vec4 ink = texture(tInk, vUv);
     if (hasGeo) {
-      col = mix(paper, texture(tInk, vUv).rgb, uFillOpacity);
+      col = mix(paper, ink.rgb, uFillOpacity);
+      // Powered elements print in a third hue. This is a deliberate exception to the
+      // two-blues-and-paper restraint: on a schematic, "this part is energised" is a category
+      // of information, not decoration, and it is the one thing a blue-on-blue fill cannot say.
+      col = mix(col, uGlow, ink.a * 0.82);
     }
     // Legend hover highlight. Resolved from the part-id channel, so it costs nothing at the
     // asset end: no per-mesh material swap, no second draw.
@@ -191,6 +204,7 @@ export const BLUEPRINT_PALETTE = {
   inkDark:   0x53749c,
   outline:   0x14314f,
   accent:    0xd06a2a,
+  glow:      0x8b46c9,
 };
 
 export class BlueprintRenderer {
@@ -252,6 +266,7 @@ export class BlueprintRenderer {
         uOutlineWidth: { value: 1.0 },
         uHighlightId: { value: -1 },
         uAccent: { value: new THREE.Color(this.palette.accent) },
+        uGlow: { value: new THREE.Color(this.palette.glow) },
       },
     });
 

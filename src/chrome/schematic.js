@@ -20,9 +20,10 @@ export class SchematicChrome {
    * @param {object} opts.subject         subject descriptor, see src/subjects/*
    * @param {object} opts.handlers        { onView, onMode, onExplode, onAzimuth, onElevation, onExport, onBust }
    */
-  constructor({ root, subject, views, joints = [], handlers = {} }) {
+  constructor({ root, subject, subjects = [], views, joints = [], handlers = {} }) {
     this.root = root;
     this.subject = subject;
+    this.subjects = subjects;
     this.views = views;
     this.joints = joints;
     this.handlers = handlers;
@@ -194,10 +195,10 @@ export class SchematicChrome {
 
     const subjectRow = el('div', 'ctl-row');
     subjectRow.appendChild(el('span', 'ctl-k', 'SUBJECT'));
-    for (const [key, label] of [['tank', 'TANK'], ['howitzer', 'HOWITZER'], ['box', 'BOX RIG']]) {
+    for (const { id, label } of this.subjects) {
       const b = el('button', 'btn', label);
-      b.classList.toggle('on', key === this.subject.id);
-      b.addEventListener('click', () => this.handlers.onSubject?.(key));
+      b.classList.toggle('on', id === this.subject.id);
+      b.addEventListener('click', () => this.handlers.onSubject?.(id));
       subjectRow.appendChild(b);
     }
     box.appendChild(subjectRow);

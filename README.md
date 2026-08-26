@@ -3,8 +3,8 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Two subjects so far — a main battle tank and an M777-pattern 155 mm towed howitzer — plus a
-primitives rig for debugging the shader.
+Three subjects so far — the **MK-VI** main battle tank, the **MK-CX** (a forward projection of
+it), and an M777-pattern 155 mm towed howitzer — plus a primitives rig for debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -19,9 +19,13 @@ npm run icons         # generates the PWA icon set (no image deps — see script
 npm start             # http://127.0.0.1:5173/
 ```
 
-- `/` — the tank
-- `/?subject=howitzer` — the 155 mm towed howitzer
+- `/` — MK-VI main battle tank
+- `/?subject=mkcx` — MK-CX, the forward projection: faceted applique, roof RWS, emissive strips
+- `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
+
+`?subject=tank` still resolves to the MK-VI; that link is published, so it keeps working rather
+than silently falling through to a default.
 
 Or use the SUBJECT row in the controls panel.
 
@@ -36,7 +40,8 @@ keep updating whether open or not, so there is no second code path for small scr
 
 ```
 src/lib/        shared asset generators — geometry, materials, part registry
-src/tank/       asset: main battle tank
+src/tank/       asset: MK-VI main battle tank
+src/mkcx/       asset: MK-CX
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -46,15 +51,32 @@ src/pwa/        registration, update-on-consent, install prompt, connectivity
 server/serve.js static server with the cache-control split the busting layer needs
 ```
 
-Asset code (`src/lib`, `src/tank`, `src/howitzer`) must not import from display code, and
+Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/howitzer`) must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
 ## Adding a subject
 
-The howitzer was the test of whether the tank's architecture was worth anything. It cost two
+The howitzer was the test of whether the MK-VI's architecture was worth anything. It cost two
 new files (`src/howitzer/**`) and one descriptor (`src/subjects/howitzer.js`). The chrome, the
 blueprint pass, the camera controller and the export path were not touched.
+
+The MK-CX did not come as cheap, and the difference is the interesting part. Geometry and
+descriptor were free in the same way. But it wanted *glowing* parts, and the blueprint pass had
+no notion of a powered element — so it needed a genuine renderer change: an `emissive` vertex
+attribute, a spare G-buffer channel to carry it, and a third hue in the composite.
+
+That is a real cost the second subject did not have, and it is worth being precise about why it
+was acceptable. The addition is a **generic capability the asset declares data for**, exactly
+like `partId` before it — `registerPart(mesh, { emissive: true })` writes an attribute, and a
+renderer that ignores the attribute draws the part normally. What would *not* have been
+acceptable is `if (subject.id === 'mkcx')` anywhere in `src/render/`.
+
+The give-away that it landed on the right side of the line: the PBR path expresses the same
+fact through `MeshStandardMaterial.emissive`, and neither display mode reads the other's
+representation. Had the glow been material-only it would have shown in the game view and
+silently vanished from the schematic, because the blueprint pass renders with an
+`overrideMaterial` and never looks at a material at all. There is an invariant for that.
 
 What makes that possible is that articulation is **declared on the scene graph**, not coded
 into the viewer:
@@ -73,7 +95,9 @@ rather than in the viewer. The viewer builds one slider per joint and knows noth
 turret rings, trunnions or trail hinges.
 
 The howitzer's third joint swings four trail hinges from a towing package to a firing
-cruciform — a mechanism the tank does not have, which required no viewer code at all.
+cruciform. The MK-CX declares four joints, the last two driving a remote weapon station that
+traverses and elevates independently of the main gun. Neither required viewer code: the sliders,
+the readouts and the sign conventions all come from the graph.
 
 Subjects may also declare `afterArticulate(root)` for fix-ups the scene graph cannot express.
 The howitzer needs one: its two road wheels are a single `InstancedMesh` (the same contract the

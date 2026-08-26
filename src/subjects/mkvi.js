@@ -6,14 +6,14 @@ const roofHeight = DIM.turret.ringY + 0.76;            // deck + turret shell
 const sightHeight = roofHeight + 0.39;                 // over the commander's sight
 
 /**
- * Subject descriptor for the tank.
+ * Subject descriptor for the MK-VI main battle tank.
  *
  * This is the file that makes the chrome reusable: the schematic layer reads only this shape,
  * so pointing it at a different subject is a different file, not a different layout.
  */
-export const TANK_SUBJECT = {
-  id: 'tank',
-  title: 'MK VI — DOOMFORGE',
+export const MKVI_SUBJECT = {
+  id: 'mkvi',
+  title: 'MK-VI',
   subtitle: 'MAIN BATTLE TANK · PROCEDURAL SCENE GRAPH · NO IMPORTED ASSETS',
   build: buildTank,
   frame: { target: [0, 1.15, 0], radius: 4.6 },

@@ -27,16 +27,25 @@ export function resetPartIds() {
  * @param {object} [opts]
  * @param {[number,number,number]} [opts.explode]  offset applied at full explode, in parent space
  * @param {boolean} [opts.explodable=true]
+ * @param {boolean} [opts.emissive=false]  part is a powered/lit element
  */
 export function registerPart(object, opts = {}) {
-  const { explode = [0, 0, 0], explodable = true } = opts;
+  const { explode = [0, 0, 0], explodable = true, emissive = false } = opts;
 
   if (object.isMesh && object.geometry && !object.geometry.getAttribute('partId')) {
-    const id = nextId++;
     const count = object.geometry.getAttribute('position').count;
-    const arr = new Float32Array(count).fill(id);
-    object.geometry.setAttribute('partId', new THREE.BufferAttribute(arr, 1));
+
+    const id = nextId++;
+    object.geometry.setAttribute('partId',
+      new THREE.BufferAttribute(new Float32Array(count).fill(id), 1));
     object.userData.partId = id;
+
+    // Written on every part, not only the glowing ones. A vertex attribute that exists on some
+    // meshes and not others is the same trap the discharger tubes fell into: WebGL substitutes
+    // a default and the render looks almost right.
+    object.geometry.setAttribute('emissive',
+      new THREE.BufferAttribute(new Float32Array(count).fill(emissive ? 1 : 0), 1));
+    object.userData.emissive = emissive;
   }
 
   if (explodable) {

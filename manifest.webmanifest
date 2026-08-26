@@ -1,7 +1,7 @@
 {
-  "name": "MK VI Doomforge \u2014 Blueprint Schematic Viewer",
-  "short_name": "Doomforge",
-  "description": "A procedural tank scene graph rendered as a technical blueprint schematic and as a game-ready PBR asset.",
+  "name": "Blueprint to Life \u2014 Procedural Vehicle Schematics",
+  "short_name": "Blueprint",
+  "description": "Vehicles built entirely from code as Three.js scene graphs, rendered as technical blueprint schematics and as game-ready PBR assets.",
   "id": "./",
   "start_url": "./?src=pwa",
   "scope": "./",
@@ -34,9 +34,20 @@
   ],
   "shortcuts": [
     {
-      "name": "Side elevation",
-      "short_name": "Side",
-      "url": "./?src=pwa&view=side",
+      "name": "MK-CX",
+      "short_name": "MK-CX",
+      "url": "./?src=pwa&subject=mkcx",
+      "icons": [
+        {
+          "src": "./icons/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "155 mm Howitzer",
+      "short_name": "Howitzer",
+      "url": "./?src=pwa&subject=howitzer",
       "icons": [
         {
           "src": "./icons/icon-192.png",

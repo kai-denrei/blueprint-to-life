@@ -29,5 +29,12 @@ export function createMaterials() {
     detail: new THREE.MeshStandardMaterial({
       name: 'M_Detail', color: 0x4e5347, roughness: 0.7, metalness: 0.3, flatShading: true,
     }),
+    // Powered elements. The blueprint pass ignores this entirely — it reads the `emissive`
+    // vertex attribute instead — so the two display modes agree on which parts are lit without
+    // either one depending on the other's representation.
+    glow: new THREE.MeshStandardMaterial({
+      name: 'M_Glow', color: 0x2a2130, roughness: 0.4, metalness: 0.0,
+      emissive: 0xc44ff0, emissiveIntensity: 2.6, flatShading: true,
+    }),
   };
 }
