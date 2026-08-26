@@ -35,27 +35,36 @@ const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
 /**
- * The shared asset contract. Everything in this list is a property BOTH models must have —
- * it is the definition of "a subject this viewer can render and this pipeline can export".
- * Adding a third vehicle means adding one line here, and any invariant it breaks is a real
- * incompatibility rather than a stylistic difference.
+ * The shared asset contract: what every subject must have for this viewer to render it and this
+ * pipeline to export it. Any invariant a new subject breaks is a real incompatibility rather
+ * than a stylistic difference.
+ *
+ * `wheels` is a flag rather than an assumption because the MK-CX broke the original version of
+ * this list, which required `Wheels_Instanced` of everything. It hovers; it has no wheels. The
+ * choice was to make the contract conditional or to bolt decorative running gear onto a
+ * hovering vehicle so a checklist stayed green — and a contract that forces geometry to exist
+ * for the test's benefit has stopped describing the thing it tests.
  */
 const MODELS = [
   {
-    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision',
+    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision', wheels: true,
     required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Turret_Pivot', 'Barrel_Pivot'],
   },
   {
-    name: 'mkcx', root: mkcx, rootName: 'MKCX_Root', collision: 'Hull_Collision',
+    name: 'mkcx', root: mkcx, rootName: 'MKCX_Root', collision: 'Hull_Collision', wheels: false,
     required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
-               'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group',
-               'RWS_Pivot', 'RWS_Gun_Pivot'],
-    pivots: ['Turret_Pivot', 'Barrel_Pivot', 'RWS_Pivot', 'RWS_Gun_Pivot'],
+               'Barrel_Pivot', 'Barrel_Mesh', 'Details_Group', 'Hover_Gear',
+               'Nacelle_L', 'Nacelle_R', 'Secondary_Turrets',
+               'Secondary_L_Pivot', 'Secondary_R_Pivot',
+               'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
+    pivots: ['Turret_Pivot', 'Barrel_Pivot',
+             'Secondary_L_Pivot', 'Secondary_R_Pivot',
+             'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
   },
   {
-    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision',
+    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', wheels: true,
     required: ['Chassis_Mesh', 'Chassis_Collision', 'Traverse_Pivot', 'TopCarriage_Mesh',
                'Elevation_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Traverse_Pivot', 'Elevation_Pivot', 'Trail_Front_L', 'Trail_Rear_R'],
@@ -146,14 +155,24 @@ for (const m of MODELS) {
     assert.deepEqual(bad, []);
   });
 
-  test(`[${m.name}] road wheels are instanced, not N loose meshes`, () => {
+  test(`[${m.name}] running gear matches what the subject claims`, () => {
     const w = m.root.getObjectByName('Wheels_Instanced');
-    assert.ok(w.isInstancedMesh, 'Wheels_Instanced must be an InstancedMesh');
-    const loose = [];
-    m.root.traverse((o) => {
-      if (o.isMesh && !o.isInstancedMesh && /RoadWheel/i.test(o.name)) loose.push(o.name);
-    });
-    assert.deepEqual(loose, []);
+    if (m.wheels) {
+      assert.ok(w?.isInstancedMesh, 'Wheels_Instanced must be an InstancedMesh');
+      const loose = [];
+      m.root.traverse((o) => {
+        if (o.isMesh && !o.isInstancedMesh && /RoadWheel/i.test(o.name)) loose.push(o.name);
+      });
+      assert.deepEqual(loose, [], 'road wheels must be instanced, not N loose meshes');
+    } else {
+      // A hovering vehicle carrying leftover running gear is worse than one carrying none:
+      // it looks like the change was abandoned halfway.
+      const leftovers = [];
+      m.root.traverse((o) => {
+        if (/RoadWheel|Sprocket|ReturnRoller|^Track_|Wheels_Instanced/i.test(o.name)) leftovers.push(o.name);
+      });
+      assert.deepEqual(leftovers, [], 'this subject declares no wheels but still carries some');
+    }
   });
 
   test(`[${m.name}] explode is stored data and is exactly reversible`, () => {
@@ -246,9 +265,32 @@ test('[mkcx] emissive parts are flagged in the geometry, not just the material',
 test('[mkcx] deviates from the MK-VI it projects forward from', () => {
   // It is supposed to be a different vehicle, not a retexture. If these ever converge, the
   // silhouette claim in the README stopped being true.
-  assert.notEqual(CXDIM.roadWheel.count, DIM.roadWheel.count);
   assert.ok(CXDIM.hull.length > DIM.hull.length, 'MK-CX should be the longer hull');
   assert.ok(CXDIM.hull.deckY < DIM.hull.deckY, 'MK-CX should be the lower hull');
+  assert.equal(CXDIM.roadWheel, undefined, 'MK-CX has no running gear at all');
+  assert.ok(CXDIM.hover.gap > 0, 'MK-CX should sit off the ground');
+});
+
+test('[mkcx] hovers: the lowest geometry clears the ground', () => {
+  mkcx.updateMatrixWorld(true);
+  let lowest = Infinity;
+  mkcx.traverse((o) => {
+    if (!o.isMesh || o.userData.isCollision) return;
+    o.geometry.computeBoundingBox();
+    const bb = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+    lowest = Math.min(lowest, bb.min.y);
+  });
+  assert.ok(lowest > 0.01, `lowest geometry sits at y=${lowest.toFixed(3)} — it is resting, not hovering`);
+});
+
+test('[mkcx] the secondary turrets clear the main gun bore line', () => {
+  // The design constraint the user set: small enough to sit under the main cannon. If a later
+  // tweak grows them past the bore, the silhouette reads as a collision.
+  const c = CXDIM.secondary;
+  const secTop = c.y + Math.max(...c.profile.map(([, y]) => y)) + 0.10;
+  const boreY = CXDIM.turret.ringY + CXDIM.barrel.trunnionY;
+  assert.ok(secTop < boreY,
+    `secondary tops out at ${secTop.toFixed(2)} but the bore is at ${boreY.toFixed(2)}`);
 });
 
 test('[tank] road wheel count matches the declared layout', () => {
@@ -324,7 +366,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="a5fb2617">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="38ff0326">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

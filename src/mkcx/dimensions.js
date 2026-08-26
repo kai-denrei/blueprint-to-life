@@ -21,28 +21,48 @@ export const CXDIM = {
     length: 7.90,
     tubWidth: 2.52,
     sponsonWidth: 3.30,
-    bellyY: 0.46,
+    bellyY: 0.62,
     sponsonY: 1.02,
     deckY: 1.52,
     noseZ: 3.78,
   },
-  track: { width: 0.68, thickness: 0.11, centreX: 1.60 },
-  roadWheel: { count: 6, radius: 0.44, thickness: 0.46, y: 0.55, firstZ: -2.55, lastZ: 2.55 },
-  sprocket: { radius: 0.50, thickness: 0.44, y: 1.00, z: -3.42 },
-  idler:    { radius: 0.46, thickness: 0.44, y: 0.94, z: 3.44 },
-  returnRoller: { radius: 0.14, thickness: 0.24, y: 1.34, zs: [-1.6, 0.4, 2.3] },
+  /**
+   * No running gear. The MK-CX is held up by lift nacelles, not by wheels — which is why every
+   * road wheel, sprocket and return roller is gone rather than hidden. A track band with
+   * nothing inside it would have been the worse answer: a vehicle that visibly hovers while
+   * still carrying the mechanism it no longer needs.
+   */
+  hover: {
+    gap: 0.26,          // nacelle underside to ground; the whole vehicle sits on this
+    nacelle: {
+      width: 0.70,
+      centreX: 1.62,
+      // Side profile (z, y): a slim pod, raked hard at both ends. The first pass was 0.78 wide
+      // and 1.04 tall, which read as a landing skid rather than something doing the lifting —
+      // and at that height it fouled both the hull tub and the old side skirts.
+      profile: [
+        [-3.28, 0.06], [-3.58, 0.30], [-3.44, 0.62], [-2.90, 0.74],
+        [2.90, 0.74], [3.50, 0.62], [3.64, 0.30], [3.30, 0.06],
+      ],
+    },
+    // Lift emitters on the nacelle underside — [z, length] pairs, mirrored per side.
+    emitters: [[-2.35, 1.15], [-0.40, 1.30], [1.70, 1.20]],
+  },
 
   turret: {
     // Moved forward from -0.55 and the roof raised: set that far back behind a long glacis,
     // the low turret read as a self-propelled gun rather than a tank. Low profile was the
     // intent; "the gun is mounted on the hull" was not.
-    ringZ: -0.15,
+    // Shrunk: shorter, narrower and lower than the first pass. With the running gear gone the
+    // hull reads as the whole vehicle, and a compact turret sitting on it looks like a weapon
+    // system rather than a crew compartment.
+    ringZ: -0.45,
     ringY: 1.52,
-    width: 2.46,
+    width: 2.06,
     // Arrow-head in side view: a long low wedge with a knife nose and a raked bustle.
     profile: [
-      [-1.86, 0.00], [-1.94, 0.34], [-1.60, 0.86], [0.34, 0.92],
-      [1.34, 0.62], [1.76, 0.24], [1.48, 0.00],
+      [-1.44, 0.00], [-1.50, 0.28], [-1.24, 0.72], [0.26, 0.78],
+      [1.06, 0.54], [1.40, 0.20], [1.18, 0.00],
     ],
   },
 
@@ -68,19 +88,30 @@ export const CXDIM = {
     mantlet: { width: 1.06, height: 0.66, depth: 0.58 },
   },
 
-  /** Remote weapon station: its own azimuth and elevation, a third and fourth joint. */
-  rws: {
-    baseY: 0.92,        // turret-local, on the roof
-    baseZ: -0.95,
-    baseX: 0.42,
-    body: { width: 0.52, height: 0.34, depth: 0.60 },
-    gunTrunnionY: 0.10,
-    gunTrunnionZ: 0.14,
-    gunProfile: [
-      [0.00, 0.00], [0.055, 0.00], [0.055, 0.62], [0.040, 0.66],
-      [0.040, 1.42], [0.058, 1.46], [0.058, 1.58], [0.00, 1.58],
+  /**
+   * Two secondary turrets on the forward deck, flanking the glacis.
+   *
+   * Deliberately sized to pass under the main gun: at zero elevation the bore sits at
+   * y = 2.06, and these top out below 1.90, so the main armament can traverse across them
+   * without the silhouette reading as a collision.
+   */
+  secondary: {
+    x: 0.86,
+    z: 2.30,
+    y: 1.40,            // hull-local; sits on the glacis
+    ring: { radius: 0.30, height: 0.09 },
+    // Squat faceted shell, roughly a fifth of the main turret's footprint.
+    profile: [
+      [-0.42, 0.00], [-0.46, 0.14], [-0.30, 0.34], [0.22, 0.36], [0.44, 0.20], [0.38, 0.00],
     ],
-    limits: { azimuth: [-180, 180], elevation: [-12, 55] },
+    width: 0.62,
+    gunTrunnionY: 0.20,
+    gunTrunnionZ: 0.18,
+    gunProfile: [
+      [0.00, 0.00], [0.048, 0.00], [0.048, 0.52], [0.036, 0.56],
+      [0.036, 1.18], [0.052, 1.22], [0.052, 1.34], [0.00, 1.34],
+    ],
+    limits: { azimuth: [-120, 120], elevation: [-10, 48] },
   },
 
   /**
@@ -93,22 +124,25 @@ export const CXDIM = {
     // intersecting solids read as one lump, and the whole point of applique is that it reads
     // as bolted-on.
     hull: [
-      [1.78, 1.34, 1.85, 0.22, 0.44, 2.10, -0.16],
-      [1.80, 1.34, -0.55, 0.22, 0.46, 2.00, -0.13],
-      [1.76, 1.32, -2.55, 0.22, 0.42, 1.60, -0.10],
+      // x pulled in to 1.72 (sponson half-width is 1.65) and the cant reduced: at 1.78 with a
+      // 0.16 rad tilt the slabs swung clear of the hull side and read as floating panels in
+      // the front elevation. A tilt about Z lifts the inboard edge away from what it bolts to.
+      [1.72, 1.30, 1.85, 0.22, 0.40, 2.10, -0.07],
+      [1.73, 1.30, -0.55, 0.22, 0.42, 2.00, -0.06],
+      [1.71, 1.28, -2.55, 0.22, 0.38, 1.60, -0.05],
     ],
     turret: [
-      [1.10, 0.44, 0.55, 0.24, 0.46, 1.30, -0.20],
-      [1.14, 0.42, -0.85, 0.24, 0.50, 1.40, -0.15],
+      [0.92, 0.40, 0.30, 0.20, 0.38, 1.05, -0.20],
+      [0.95, 0.38, -0.72, 0.20, 0.40, 1.05, -0.15],
     ],
   },
 
   /** Emissive strips: [x, y, z, w, h, d] in their parent's space. Powered elements only. */
   glow: {
     barrel: [[0, 0.20, 1.55, 0.045, 0.030, 0.70], [0, 0.20, 2.95, 0.045, 0.030, 0.70]],
-    turret: [[1.24, 0.54, 0.95, 0.03, 0.075, 0.62], [-1.24, 0.54, 0.95, 0.03, 0.075, 0.62]],
-    hull: [[1.90, 1.34, 1.85, 0.03, 0.075, 1.05], [-1.90, 1.34, 1.85, 0.03, 0.075, 1.05],
-           [1.88, 1.32, -2.55, 0.03, 0.075, 0.80], [-1.88, 1.32, -2.55, 0.03, 0.075, 0.80]],
+    turret: [[1.04, 0.48, 0.60, 0.03, 0.065, 0.50], [-1.04, 0.48, 0.60, 0.03, 0.065, 0.50]],
+    hull: [[1.84, 1.30, 1.85, 0.03, 0.070, 1.05], [-1.84, 1.30, 1.85, 0.03, 0.070, 1.05],
+           [1.83, 1.28, -2.55, 0.03, 0.070, 0.80], [-1.83, 1.28, -2.55, 0.03, 0.070, 0.80]],
   },
 
   limits: {
@@ -116,19 +150,3 @@ export const CXDIM = {
     elevation: [-12, 22],
   },
 };
-
-/** Running gear for one side, shared by the wheels, the track band and the collision proxy. */
-export function wheelLayout() {
-  const { roadWheel: rw, sprocket, idler } = CXDIM;
-  const out = [];
-  const step = (rw.lastZ - rw.firstZ) / (rw.count - 1);
-  for (let i = 0; i < rw.count; i++) {
-    out.push({
-      name: `RoadWheel_${String(i + 1).padStart(2, '0')}`,
-      z: rw.firstZ + i * step, y: rw.y, r: rw.radius, thickness: rw.thickness, kind: 'road',
-    });
-  }
-  out.push({ name: 'DriveSprocket', z: sprocket.z, y: sprocket.y, r: sprocket.radius, thickness: sprocket.thickness, kind: 'sprocket' });
-  out.push({ name: 'Idler', z: idler.z, y: idler.y, r: idler.radius, thickness: idler.thickness, kind: 'idler' });
-  return out;
-}

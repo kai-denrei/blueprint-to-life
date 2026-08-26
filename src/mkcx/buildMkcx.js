@@ -1,16 +1,21 @@
 import * as THREE from 'three';
-import { CXDIM, wheelLayout } from './dimensions.js';
-import { extrudeProfile, trackBand, latheZ, mergeNonIndexed, finish } from '../lib/geometry.js';
+import { CXDIM } from './dimensions.js';
+import { extrudeProfile, latheZ, mergeNonIndexed, finish } from '../lib/geometry.js';
 import { createMaterials } from '../lib/materials.js';
 import { registerPart, resetPartIds } from '../lib/parts.js';
 
 /**
  * MK-CX — a forward projection of the MK-VI on the same hierarchy contract.
  *
- * Everything the MK-VI's names promise is here (Hull_Mesh, Turret_Pivot, Barrel_Pivot,
- * Wheels_Instanced, Details_Group), so anything that could consume one can consume the other.
- * What it adds is a remote weapon station with its own azimuth and elevation — joints three and
- * four — and emissive strips marking powered elements.
+ * It keeps the parts of the MK-VI's contract that still mean something — Hull_Mesh,
+ * Hull_Collision, Turret_Pivot, Barrel_Pivot, Details_Group — and breaks one that does not.
+ * There is no `Wheels_Instanced`, because there are no wheels: the vehicle is held up by lift
+ * nacelles. That is the first time a subject has failed to satisfy the shared hierarchy
+ * contract, and the honest response was to make the contract conditional rather than bolt on
+ * decorative running gear so the checklist stayed green.
+ *
+ * Armament is a compact main turret plus two secondary turrets on the forward deck, sized to
+ * pass under the main gun's bore line.
  */
 export function buildMkcx() {
   resetPartIds();
@@ -21,11 +26,16 @@ export function buildMkcx() {
 
   root.add(buildHull(M));
   root.add(buildCollision());
-  root.add(buildRunningGear(M));
+  root.add(buildHoverGear(M));
   root.add(buildTurret(M));
+  root.add(buildSecondaries(M));
   root.add(buildHullDetails(M));
 
-  const r = CXDIM.rws.limits;
+  // The whole vehicle floats. Lifting the root rather than every part keeps the hover gap a
+  // single number instead of an offset baked into every Y coordinate in the dimensions file.
+  root.position.y = CXDIM.hover.gap;
+
+  const sec = CXDIM.secondary.limits;
   root.userData.joints = [
     {
       key: 'azimuth', label: 'AZIMUTH', unit: '°', min: -180, max: 180, step: 1, value: 0,
@@ -36,15 +46,24 @@ export function buildMkcx() {
       min: CXDIM.limits.elevation[0], max: CXDIM.limits.elevation[1], step: 0.5, value: 0,
       targets: [{ node: 'Barrel_Pivot', axis: 'x', from: -CXDIM.limits.elevation[0], to: -CXDIM.limits.elevation[1] }],
     },
+    // Both secondaries slave to one pair of sliders. A joint already supports several targets
+    // — the howitzer's trails joint drives four hinges — so paired turrets cost nothing extra,
+    // and four sliders is as many as the mobile CTRL sheet holds comfortably.
     {
-      key: 'rwsAzimuth', label: 'RWS TRAV', unit: '°',
-      min: r.azimuth[0], max: r.azimuth[1], step: 1, value: 0,
-      targets: [{ node: 'RWS_Pivot', axis: 'y', from: r.azimuth[0], to: r.azimuth[1] }],
+      key: 'secAzimuth', label: 'SEC TRAV', unit: '°',
+      min: sec.azimuth[0], max: sec.azimuth[1], step: 1, value: 0,
+      targets: [
+        { node: 'Secondary_L_Pivot', axis: 'y', from: sec.azimuth[0], to: sec.azimuth[1] },
+        { node: 'Secondary_R_Pivot', axis: 'y', from: sec.azimuth[0], to: sec.azimuth[1] },
+      ],
     },
     {
-      key: 'rwsElevation', label: 'RWS ELEV', unit: '°',
-      min: r.elevation[0], max: r.elevation[1], step: 0.5, value: 0,
-      targets: [{ node: 'RWS_Gun_Pivot', axis: 'x', from: -r.elevation[0], to: -r.elevation[1] }],
+      key: 'secElevation', label: 'SEC ELEV', unit: '°',
+      min: sec.elevation[0], max: sec.elevation[1], step: 0.5, value: 0,
+      targets: [
+        { node: 'Secondary_L_Gun_Pivot', axis: 'x', from: -sec.elevation[0], to: -sec.elevation[1] },
+        { node: 'Secondary_R_Gun_Pivot', axis: 'x', from: -sec.elevation[0], to: -sec.elevation[1] },
+      ],
     },
   ];
   return root;
@@ -90,58 +109,56 @@ function buildCollision() {
   return mesh;
 }
 
-// --- running gear ----------------------------------------------------------
+// --- hover gear ------------------------------------------------------------
 
-function buildRunningGear(M) {
+/**
+ * Lift nacelles in place of running gear.
+ *
+ * Each is a single extruded pod along one side, with emissive emitters on its underside. There
+ * is nothing instanced here because there is nothing repeated: the whole point of the change is
+ * that the repeated element — a road wheel — no longer exists.
+ */
+function buildHoverGear(M) {
   const group = new THREE.Object3D();
-  group.name = 'Running_Gear';
+  group.name = 'Hover_Gear';
+  const h = CXDIM.hover;
 
-  const circles = wheelLayout();
-  group.add(instanced('Wheels_Instanced', circles.filter((c) => c.kind === 'road'), M.rubber, [0, -1.4, 0]));
-  group.add(instanced('Sprockets_Instanced', circles.filter((c) => c.kind !== 'road'), M.steel, [0, -1.4, 0]));
-
-  const rr = CXDIM.returnRoller;
-  group.add(instanced('ReturnRollers_Instanced',
-    rr.zs.map((z, i) => ({ name: `ReturnRoller_${i}`, z, y: rr.y, r: rr.radius, thickness: rr.thickness })),
-    M.rubber, [0, 0.75, 0]));
-
-  const band = trackBand(circles, { thickness: CXDIM.track.thickness, width: CXDIM.track.width });
   for (const side of [-1, 1]) {
-    const mesh = new THREE.Mesh(band.clone(), M.track);
-    mesh.name = side < 0 ? 'Track_L' : 'Track_R';
-    mesh.position.x = side * CXDIM.track.centreX;
-    mesh.castShadow = true;
-    group.add(registerPart(mesh, { explode: [side * 1.7, -0.4, 0] }));
-  }
-  return group;
-}
+    const tag = side < 0 ? 'L' : 'R';
 
-function instanced(name, circles, material, explode) {
-  const base = new THREE.CylinderGeometry(1, 1, 1, 20, 1, false).toNonIndexed();
-  base.rotateZ(Math.PI / 2);
-  finish(base);
+    const nacelle = new THREE.Mesh(
+      extrudeProfile(h.nacelle.profile, h.nacelle.width, { frontScale: 0.86, backScale: 0.86 }),
+      M.armour,
+    );
+    nacelle.name = `Nacelle_${tag}`;
+    nacelle.position.x = side * h.nacelle.centreX;
+    nacelle.castShadow = nacelle.receiveShadow = true;
+    group.add(registerPart(nacelle, { explode: [side * 2.0, -0.5, 0] }));
 
-  const mesh = new THREE.InstancedMesh(base, material, circles.length * 2);
-  mesh.name = name;
-  mesh.castShadow = true;
-
-  const m = new THREE.Matrix4();
-  const q = new THREE.Quaternion();
-  let i = 0;
-  for (const side of [-1, 1]) {
-    for (const c of circles) {
-      m.compose(
-        new THREE.Vector3(side * CXDIM.track.centreX, c.y, c.z), q,
-        new THREE.Vector3(c.thickness, c.r, c.r),
+    // Emitters: flat panels under the nacelle, flagged emissive. These are what the viewer
+    // reads as "this is what is holding it up".
+    h.emitters.forEach(([z, len], i) => {
+      const emitter = new THREE.Mesh(
+        finish(new THREE.BoxGeometry(h.nacelle.width * 0.62, 0.05, len).toNonIndexed()), M.glow,
       );
-      mesh.setMatrixAt(i++, m);
+      emitter.name = `LiftEmitter_${tag}${i + 1}`;
+      emitter.position.set(side * h.nacelle.centreX, 0.02, z);
+      group.add(registerPart(emitter, { explode: [side * 0.8, -1.1, 0], emissive: true }));
+    });
+
+    // Pylons tying the nacelle to the sponson, so it does not read as floating alongside.
+    // Pylons bridging nacelle top (0.74) to the sponson underside (1.02), so the nacelle is
+    // visibly carried rather than floating alongside.
+    for (const z of [-2.30, 0.10, 2.40]) {
+      const pylon = new THREE.Mesh(
+        finish(new THREE.BoxGeometry(0.52, 0.30, 0.34).toNonIndexed()), M.steel,
+      );
+      pylon.name = `Pylon_${tag}${z < 0 ? 'A' : z < 1 ? 'B' : 'C'}`;
+      pylon.position.set(side * (h.nacelle.centreX - 0.22), 0.88, z);
+      group.add(registerPart(pylon, { explodable: false }));
     }
   }
-  mesh.instanceMatrix.needsUpdate = true;
-  mesh.userData.instanceNames = [
-    ...circles.map((c) => `${c.name}_L`), ...circles.map((c) => `${c.name}_R`),
-  ];
-  return registerPart(mesh, { explode });
+  return group;
 }
 
 // --- turret ----------------------------------------------------------------
@@ -165,7 +182,6 @@ function buildTurret(M) {
   strips(pivot, CXDIM.glow.turret, 'Turret_Glow', M.glow);
 
   pivot.add(buildBarrel(M));
-  pivot.add(buildRws(M));
   pivot.add(buildTurretDetails(M));
   return pivot;
 }
@@ -201,79 +217,81 @@ function buildBarrel(M) {
 }
 
 /**
- * Remote weapon station. Two nested pivots on the turret roof, named on the same pattern as the
- * main armament so the joint declaration reads identically — the viewer cannot tell that one of
- * these is a 120 mm gun and the other is a 12.7 mm on a mount.
+ * Two secondary turrets on the forward deck.
+ *
+ * Named on the same pattern as the main armament — a pivot for azimuth, a nested pivot for
+ * elevation — so the joint declaration that drives them is identical in shape to the one that
+ * drives the 120 mm. Both slave to one pair of sliders.
  */
-function buildRws(M) {
-  const r = CXDIM.rws;
+function buildSecondaries(M) {
+  const group = new THREE.Object3D();
+  group.name = 'Secondary_Turrets';
+  const c = CXDIM.secondary;
 
-  const pivot = new THREE.Object3D();
-  pivot.name = 'RWS_Pivot';
-  pivot.position.set(r.baseX, r.baseY, r.baseZ);
-  registerPart(pivot, { explode: [0.8, 1.4, -0.4] });
+  for (const side of [-1, 1]) {
+    const tag = side < 0 ? 'L' : 'R';
 
-  const ring = new THREE.Mesh(
-    finish(new THREE.CylinderGeometry(0.30, 0.34, 0.10, 14).toNonIndexed()), M.detail,
-  );
-  ring.name = 'RWS_Ring';
-  ring.position.y = -0.04;
-  pivot.add(registerPart(ring, { explodable: false }));
+    const ring = new THREE.Mesh(
+      finish(new THREE.CylinderGeometry(c.ring.radius, c.ring.radius * 1.1, c.ring.height, 12).toNonIndexed()),
+      M.detail,
+    );
+    ring.name = `Secondary_${tag}_Ring`;
+    ring.position.set(side * c.x, c.y - c.ring.height / 2, c.z);
+    group.add(registerPart(ring, { explodable: false }));
 
-  const body = new THREE.Mesh(
-    finish(new THREE.BoxGeometry(r.body.width, r.body.height, r.body.depth).toNonIndexed()), M.detail,
-  );
-  body.name = 'RWS_Mesh';
-  body.position.y = r.body.height / 2 + 0.02;
-  body.castShadow = true;
-  pivot.add(registerPart(body, { explodable: false }));
+    const pivot = new THREE.Object3D();
+    pivot.name = `Secondary_${tag}_Pivot`;          // rotation.y
+    pivot.position.set(side * c.x, c.y, c.z);
+    registerPart(pivot, { explode: [side * 1.3, 0.9, 0.7] });
 
-  const sensor = new THREE.Mesh(
-    finish(new THREE.BoxGeometry(0.30, 0.16, 0.14).toNonIndexed()), M.steel,
-  );
-  sensor.name = 'RWS_Sight';
-  sensor.position.set(0, r.body.height + 0.08, -0.10);
-  pivot.add(registerPart(sensor, { explode: [0, 0.6, -0.4] }));
+    const shell = new THREE.Mesh(
+      extrudeProfile(c.profile, c.width, { frontScale: 0.78, backScale: 0.78 }), M.turret,
+    );
+    shell.name = `Secondary_${tag}_Mesh`;
+    shell.castShadow = true;
+    pivot.add(registerPart(shell, { explodable: false }));
 
-  strips(pivot, [[0, 0.20, 0.31, 0.28, 0.035, 0.02]], 'RWS_Glow', M.glow);
+    strips(pivot, [[0, 0.20, 0.30, 0.24, 0.03, 0.02]], `Secondary_${tag}_Glow`, M.glow);
 
-  const gunPivot = new THREE.Object3D();
-  gunPivot.name = 'RWS_Gun_Pivot';
-  gunPivot.position.set(0, r.gunTrunnionY + r.body.height / 2, r.gunTrunnionZ);
-  registerPart(gunPivot, { explode: [0, 0, 0.8] });
+    const gunPivot = new THREE.Object3D();
+    gunPivot.name = `Secondary_${tag}_Gun_Pivot`;   // rotation.x
+    gunPivot.position.set(0, c.gunTrunnionY, c.gunTrunnionZ);
+    registerPart(gunPivot, { explode: [0, 0, 0.7] });
 
-  const gun = new THREE.Mesh(latheZ(r.gunProfile, 10), M.steel);
-  gun.name = 'RWS_Gun_Mesh';
-  gunPivot.add(registerPart(gun, { explodable: false }));
+    const gun = new THREE.Mesh(latheZ(c.gunProfile, 10), M.steel);
+    gun.name = `Secondary_${tag}_Gun_Mesh`;
+    gunPivot.add(registerPart(gun, { explodable: false }));
 
-  const receiver = new THREE.Mesh(
-    finish(new THREE.BoxGeometry(0.16, 0.16, 0.34).toNonIndexed()), M.steel,
-  );
-  receiver.name = 'RWS_Receiver';
-  receiver.position.z = -0.10;
-  gunPivot.add(registerPart(receiver, { explodable: false }));
+    const mantlet = new THREE.Mesh(
+      finish(new THREE.BoxGeometry(0.20, 0.18, 0.16).toNonIndexed()), M.steel,
+    );
+    mantlet.name = `Secondary_${tag}_Mantlet`;
+    mantlet.position.z = 0.04;
+    gunPivot.add(registerPart(mantlet, { explodable: false }));
 
-  pivot.add(gunPivot);
-  return pivot;
+    pivot.add(gunPivot);
+    group.add(pivot);
+  }
+  return group;
 }
 
 function buildTurretDetails(M) {
   const g = new THREE.Object3D();
   g.name = 'Details_Turret';
-  const top = 0.92;
+  const top = 0.78;   // matches CXDIM.turret.profile's roof
 
   const hatch = new THREE.Mesh(
-    finish(new THREE.CylinderGeometry(0.31, 0.33, 0.11, 8).toNonIndexed()), M.detail,
+    finish(new THREE.CylinderGeometry(0.25, 0.27, 0.09, 8).toNonIndexed()), M.detail,
   );
   hatch.name = 'Hatch_Commander';
-  hatch.position.set(-0.60, top + 0.04, -0.70);
+  hatch.position.set(-0.44, top + 0.04, -0.52);
   g.add(registerPart(hatch, { explode: [-0.5, 1.2, 0] }));
 
   const sight = new THREE.Mesh(
-    finish(new THREE.BoxGeometry(0.46, 0.26, 0.40).toNonIndexed()), M.detail,
+    finish(new THREE.BoxGeometry(0.36, 0.22, 0.32).toNonIndexed()), M.detail,
   );
   sight.name = 'Sight_Primary';
-  sight.position.set(-0.52, top + 0.10, 0.62);
+  sight.position.set(-0.36, top + 0.09, 0.42);
   sight.rotation.x = -0.10;
   g.add(registerPart(sight, { explode: [-1.0, 1.0, 0.4] }));
 
@@ -303,16 +321,16 @@ function buildTurretDetails(M) {
     tubes.userData.instanceNames = Array.from({ length: 4 }, (_, k) => `Tube_${side < 0 ? 'L' : 'R'}${k + 1}`);
     pod.add(registerPart(tubes, { explodable: false }));
 
-    pod.position.set(side * 0.96, top - 0.06, -1.45);
-    pod.rotation.set(-0.34, side * 0.20, 0);
+    pod.position.set(side * 0.70, top - 0.16, -0.98);
+    pod.rotation.set(-0.26, side * 0.18, 0);
     g.add(registerPart(pod, { explode: [side * 1.6, 0.8, -1.0] }));
   }
 
   const bin = new THREE.Mesh(
-    extrudeProfile([[-0.55, 0], [0.42, 0], [0.30, 0.50], [-0.48, 0.44]], 1.90), M.detail,
+    extrudeProfile([[-0.44, 0], [0.34, 0], [0.24, 0.42], [-0.38, 0.36]], 1.56), M.detail,
   );
   bin.name = 'Stowage_Bin';
-  bin.position.set(0, 0.16, -2.10);
+  bin.position.set(0, 0.14, -1.62);
   bin.rotation.y = Math.PI / 2;
   g.add(registerPart(bin, { explode: [0, 0.4, -1.8] }));
 
@@ -332,19 +350,14 @@ function buildHullDetails(M) {
 
   for (const side of [-1, 1]) {
     const tag = side < 0 ? 'L' : 'R';
-    const skirt = new THREE.Mesh(extrudeProfile([
-      [-2.60, -0.30], [2.70, -0.30], [2.96, 0.02], [2.70, 0.34], [-2.60, 0.34], [-2.86, 0.02],
-    ], 0.07), M.armour);
-    skirt.name = `SideSkirt_${tag}`;
-    // Dropped so its top edge sits just under the applique rather than through it.
-    skirt.position.set(side * (h.sponsonWidth / 2 + 0.02), h.sponsonY - 0.28, 0.10);
-    g.add(registerPart(skirt, { explode: [side * 2.0, 0, 0] }));
-
     const light = new THREE.Mesh(
       finish(new THREE.BoxGeometry(0.30, 0.10, 0.06).toNonIndexed()), M.glow,
     );
     light.name = `Headlight_${tag}`;
-    light.position.set(side * 1.06, h.sponsonY + 0.26, h.noseZ - 0.06);
+    // Sunk into the glacis rather than perched on the nose point: the upper hull's front
+    // vertex is at (noseZ, sponsonY + 0.26), so anything placed AT that vertex touches the
+    // hull at a single edge and reads as detached.
+    light.position.set(side * 1.06, h.sponsonY + 0.20, h.noseZ - 0.28);
     g.add(registerPart(light, { explode: [side * 0.6, 0.4, 1.3], emissive: true }));
   }
 

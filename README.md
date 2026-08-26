@@ -20,7 +20,8 @@ npm start             # http://127.0.0.1:5173/
 ```
 
 - `/` — MK-VI main battle tank
-- `/?subject=mkcx` — MK-CX, the forward projection: faceted applique, roof RWS, emissive strips
+- `/?subject=mkcx` — MK-CX, the forward projection: no running gear at all, lift nacelles with
+  emissive emitters, a compact main turret and two secondary turrets tucked under the bore line
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -172,6 +173,24 @@ module graph under a live WebGL context mid-orbit is how PWAs earn their reputat
 Install: Chrome/Android get a real button wired to `beforeinstallprompt`; iOS Safari gets a
 Share-sheet hint, because there is no programmatic install there and a button that does nothing
 is worse than none.
+
+### What the MK-CX broke
+
+It hovers, so it has no wheels — and the shared invariant list required `Wheels_Instanced` of
+every subject. That list was written when both existing vehicles happened to roll, and it had
+quietly encoded "vehicles have wheels" as though it were part of the contract.
+
+The two options were to make the contract conditional or to bolt decorative running gear onto a
+hovering vehicle so the checklist stayed green. A contract that forces geometry to exist for the
+test's benefit has stopped describing the thing it tests, so `MODELS` now carries a `wheels`
+flag, and a subject that declares no wheels is checked for the opposite: that no orphaned road
+wheel, sprocket, roller or track survived the change. A hovering vehicle still carrying its
+running gear looks like the edit was abandoned halfway.
+
+Two more invariants came out of the same change: that the lowest geometry actually clears the
+ground (otherwise it is resting, not hovering), and that the secondary turrets stay below the
+main gun's bore line — a design constraint that is easy to violate later with a small tweak and
+that shows up as a silhouette collision rather than an error.
 
 ## Deployed
 
