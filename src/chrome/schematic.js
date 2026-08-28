@@ -151,34 +151,28 @@ export class SchematicChrome {
   _controls() {
     const box = el('div', 'panel controls');
 
-    const viewRow = el('div', 'ctl-row');
-    viewRow.appendChild(el('span', 'ctl-k', 'VIEW'));
-    this.viewButtons = new Map();
-    for (const [key, v] of Object.entries(this.views)) {
-      const b = el('button', 'btn', v.label);
-      b.addEventListener('click', () => this.handlers.onView?.(key));
-      this.viewButtons.set(key, b);
-      viewRow.appendChild(b);
-    }
-    box.appendChild(viewRow);
+    const views = this._optionRow(
+      'VIEW',
+      Object.entries(this.views).map(([key, v]) => [key, v.label]),
+      (key) => this.handlers.onView?.(key),
+    );
+    this.viewButtons = views.buttons;
+    box.appendChild(views.row);
 
-    const modeRow = el('div', 'ctl-row');
-    modeRow.appendChild(el('span', 'ctl-k', 'MODE'));
-    this.modeButtons = new Map();
-    for (const [key, label] of [['blueprint', 'BLUEPRINT'], ['pbr', 'GAME / PBR']]) {
-      const b = el('button', 'btn', label);
-      b.addEventListener('click', () => this.handlers.onMode?.(key));
-      this.modeButtons.set(key, b);
-      modeRow.appendChild(b);
-    }
+    const modes = this._optionRow(
+      'MODE',
+      [['blueprint', 'BLUEPRINT'], ['pbr', 'GAME / PBR']],
+      (key) => this.handlers.onMode?.(key),
+    );
+    this.modeButtons = modes.buttons;
     const calloutBtn = el('button', 'btn', 'CALLOUTS');
     calloutBtn.addEventListener('click', () => {
       const on = this.root.classList.toggle('no-callouts');
       calloutBtn.classList.toggle('on', !on);
     });
     calloutBtn.classList.add('on');
-    modeRow.appendChild(calloutBtn);
-    box.appendChild(modeRow);
+    modes.row.querySelector('.ctl-opts').appendChild(calloutBtn);
+    box.appendChild(modes.row);
 
     box.appendChild(this._slider('EXPLODE', 0, 1, 0.001, 0, (v) => this.handlers.onExplode?.(v)));
 
@@ -193,27 +187,52 @@ export class SchematicChrome {
       ));
     }
 
-    const subjectRow = el('div', 'ctl-row');
-    subjectRow.appendChild(el('span', 'ctl-k', 'SUBJECT'));
-    for (const { id, label } of this.subjects) {
-      const b = el('button', 'btn', label);
-      b.classList.toggle('on', id === this.subject.id);
-      b.addEventListener('click', () => this.handlers.onSubject?.(id));
-      subjectRow.appendChild(b);
-    }
-    box.appendChild(subjectRow);
+    box.appendChild(this._optionRow(
+      'SUBJECT',
+      this.subjects.map((s) => [s.id, s.label]),
+      (id) => this.handlers.onSubject?.(id),
+      (id) => id === this.subject.id,
+    ).row);
 
-    const exportRow = el('div', 'ctl-row');
-    exportRow.appendChild(el('span', 'ctl-k', 'ASSET'));
-    const ex = el('button', 'btn', 'EXPORT GLB');
-    ex.addEventListener('click', () => this.handlers.onExport?.());
-    exportRow.appendChild(ex);
-    const dump = el('button', 'btn', 'DUMP GRAPH');
-    dump.addEventListener('click', () => this.handlers.onDumpGraph?.());
-    exportRow.appendChild(dump);
-    box.appendChild(exportRow);
+    box.appendChild(this._optionRow(
+      'ASSET',
+      [['export', 'EXPORT GLB'], ['dump', 'DUMP GRAPH']],
+      (key) => (key === 'export' ? this.handlers.onExport?.() : this.handlers.onDumpGraph?.()),
+    ).row);
 
     return box;
+  }
+
+  /**
+   * A label plus a group of buttons that wraps.
+   *
+   * The buttons used to be direct children of `.ctl-row`, which is one non-wrapping flex line
+   * inside a fixed-width panel — so every subject and every view added past the width ran off
+   * the right edge and became unclickable. Two vehicles and one camera view were unreachable
+   * by the time there were six subjects, and nothing said so: the panel just ended.
+   *
+   * Wrapping the buttons in their own group rather than putting `flex-wrap` on the row is what
+   * keeps the label column intact. `flex-wrap` on the row itself would let the 54px key wrap
+   * down with the buttons and the rows would stop lining up.
+   */
+  _optionRow(label, entries, onPick, isOn) {
+    // The modifier class is what lets the stylesheet reorder rows per breakpoint without the
+    // chrome knowing anything about breakpoints. It replaced a `:first-child` rule that hid
+    // the VIEW row on mobile purely by position — correct only for as long as VIEW stayed
+    // first, which is exactly the assumption the phone layout then wanted to break.
+    const row = el('div', `ctl-row opt-row opt-${label.toLowerCase()}`);
+    row.appendChild(el('span', 'ctl-k', label));
+    const opts = el('div', 'ctl-opts');
+    const buttons = new Map();
+    for (const [key, text] of entries) {
+      const b = el('button', 'btn', text);
+      b.classList.toggle('on', !!isOn?.(key));
+      b.addEventListener('click', () => onPick(key, b));
+      buttons.set(key, b);
+      opts.appendChild(b);
+    }
+    row.appendChild(opts);
+    return { row, buttons };
   }
 
   _slider(label, min, max, step, value, onInput) {

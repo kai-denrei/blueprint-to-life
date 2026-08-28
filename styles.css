@@ -165,8 +165,14 @@ html, body {
   color: var(--ink-faint);
 }
 
-/* Controls */
-.controls { bottom: 18px; right: 18px; width: 340px; padding: 9px 12px 11px; }
+/* Controls.
+
+   Lifted clear of the bottom edge rather than sitting on the usual 18px inset: cb-badge.js
+   pins the build badge at `bottom: 8px; right: 8px`, which is inside this panel's footprint,
+   and it was landing on top of the ASSET row's buttons. Every other corner of the drawing is
+   already spoken for by a panel, so the badge keeps its corner and the panel steps up out of
+   it — the badge reads as this panel's footer instead of as debris on top of it. */
+.controls { bottom: 52px; right: 18px; width: 360px; padding: 9px 12px 11px; }
 .ctl-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .ctl-k {
   width: 54px;
@@ -175,6 +181,18 @@ html, body {
   letter-spacing: 0.16em;
   color: var(--ink-mid);
 }
+
+/* Button rows wrap; slider rows do not.
+
+   The buttons sit in their own flex container rather than `flex-wrap` going on .ctl-row,
+   because wrapping the row would let the 54px key wrap down with them and the labels would
+   stop lining up. This is the whole fix for the bug where a sixth view and a seventh subject
+   simply fell off the right edge of the panel and became unclickable — the panel has a fixed
+   width and the row had nowhere to put them. Rows grow downward now, so another subject costs
+   a line rather than a button. */
+.opt-row { align-items: flex-start; }
+.opt-row .ctl-k { padding-top: 4px; }
+.ctl-opts { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 5px; }
 .ctl-v { width: 44px; text-align: right; font-variant-numeric: tabular-nums; font-size: 10px; }
 
 .btn {
@@ -338,7 +356,10 @@ html, body {
     bottom: calc(var(--bar-h) + var(--safe-b));
     top: auto;
     width: auto;
-    max-height: min(56dvh, 460px);
+    /* Capped well under half the screen. At 56dvh the CTRL sheet plus the 86px bar covered
+       ~63% of a 390x844 phone — you were adjusting a model you could no longer see. The sheet
+       already scrolls, so the cap costs reach, not content. */
+    max-height: min(44dvh, 380px);
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
@@ -356,15 +377,25 @@ html, body {
   .legend-item { padding: 7px 14px; font-size: 12px; }
   .instr-row { padding: 6px 14px; font-size: 12px; }
   .instr-k { font-size: 10px; }
-  .controls { width: auto; padding: 12px 14px 16px; }
+  /* The sheet is capped and scrolls, so row order is reach. SUBJECT — what you are looking
+     at — goes to the top; the joint sliders, which you only touch once you are already
+     looking at the right thing, scroll below it. Left in source order it was the last row
+     under seven sliders, permanently below the fold on a phone. */
+  .controls { width: auto; padding: 12px 14px 16px; display: flex; flex-direction: column; }
+  .controls .opt-subject { order: -1; padding-bottom: 10px; border-bottom: 1px solid var(--panel-line); }
   /* The bottom bar already carries the view row; repeating it inside the CTRL sheet just
      overflowed horizontally and cut FREE off the end. */
-  .controls .ctl-row:first-child { display: none; }
+  .controls .opt-view { display: none; }
 
   /* Touch targets. 9px buttons are a desktop affordance; a finger needs ~28px of height. */
   .btn { font-size: 10px; padding: 8px 11px; }
   .ctl-row { gap: 9px; margin: 9px 0; }
   .ctl-k { width: 58px; font-size: 9.5px; }
+  /* Bigger buttons in a narrower column, so the wrap matters more here than on desktop: the
+     seven subjects took 535px of a 362px row and three of them — the newest vehicle included —
+     were unreachable on a phone. */
+  .ctl-opts { gap: 6px; }
+  .opt-row .ctl-k { padding-top: 9px; }
   .slider-row input[type="range"] { height: 26px; background: transparent; }
   .slider-row input[type="range"]::-webkit-slider-runnable-track {
     height: 2px; background: var(--ink-faint);
@@ -403,7 +434,13 @@ html, body {
   /* The cache-bust badge is fixed bottom-right by cb-badge.js, which is exactly where the
      sheet tabs are. Lift it above the bar rather than hiding it — being able to see which
      build you are on matters more on a device you cannot open devtools on. */
+  /* An open sheet reaches up past the badge's slot, so the badge would sit on top of the
+     sheet's own controls — it was covering two of the subject buttons. The build token is in
+     the DATA sheet as well, so deferring it until the sheet closes costs nothing. */
+  #app[data-sheet] ~ #cb-badge { opacity: 0; pointer-events: none; }
+
   #cb-badge {
+    transition: opacity 140ms ease-out;
     bottom: calc(var(--bar-h) + var(--safe-b) + 8px) !important;
     right: calc(8px + var(--safe-r)) !important;
     left: auto !important;

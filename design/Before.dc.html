@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace; }
+    a { color: #d06a2a; } a:hover { color: #a8541f; }
+  </style>
+</helmet>
+
+<div style="width: 460px; height: 400px; background: #dbe3ee; background-image: linear-gradient(rgba(20,49,79,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(20,49,79,0.07) 1px, transparent 1px); background-size: 34px 34px; padding: 26px 24px; display: flex; flex-direction: column; gap: 14px; align-items: flex-start;">
+
+  <div style="display: flex; align-items: baseline; gap: 8px;">
+    <span style="font-size: 9px; letter-spacing: 0.18em; color: #d06a2a;">BEFORE</span>
+    <span style="font-size: 9px; letter-spacing: 0.1em; color: #53749c;">340 px · ONE FLEX LINE PER ROW</span>
+  </div>
+
+  <!-- The panel, at its real 340px width, with rows clipped exactly as the build clips them. -->
+  <div style="position: relative; width: 340px; background: rgba(232,238,246,0.78); border: 1px solid rgba(20,49,79,0.34); color: #14314f; font-size: 11px; line-height: 1.45; letter-spacing: 0.04em; padding: 9px 12px 11px; overflow: hidden;">
+
+    <div style="display: flex; align-items: center; gap: 6px; margin: 4px 0;">
+      <span style="width: 54px; flex: none; font-size: 8.5px; letter-spacing: 0.16em; color: #53749c;">VIEW</span>
+      <div style="display: flex; gap: 6px; flex: none;">
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid #14314f; background: #14314f; color: #e8eef6; white-space: nowrap;">ISO</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">FRONT</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">REAR</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">SIDE</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">PLAN</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">FREE</span>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 6px; margin: 4px 0;">
+      <span style="width: 54px; flex: none; font-size: 8.5px; letter-spacing: 0.16em; color: #53749c;">MODE</span>
+      <div style="display: flex; gap: 6px; flex: none;">
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid #14314f; background: #14314f; color: #e8eef6; white-space: nowrap;">BLUEPRINT</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">GAME / PBR</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid #14314f; background: #14314f; color: #e8eef6; white-space: nowrap;">CALLOUTS</span>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 6px; margin: 4px 0;">
+      <span style="width: 54px; flex: none; font-size: 8.5px; letter-spacing: 0.16em; color: #53749c;">EXPLODE</span>
+      <div style="flex: 1; height: 2px; background: #9fb6d2; position: relative;">
+        <span style="position: absolute; left: 0; top: -4.5px; width: 11px; height: 11px; border-radius: 50%; background: #14314f;"></span>
+      </div>
+      <span style="width: 44px; text-align: right; font-size: 10px;">0</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 6px; margin: 4px 0;">
+      <span style="width: 54px; flex: none; font-size: 8.5px; letter-spacing: 0.16em; color: #53749c;">STANCE</span>
+      <div style="flex: 1; height: 2px; background: #9fb6d2; position: relative;">
+        <span style="position: absolute; left: 48%; top: -4.5px; width: 11px; height: 11px; border-radius: 50%; background: #14314f;"></span>
+      </div>
+      <span style="width: 44px; text-align: right; font-size: 10px;">50</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 6px; margin: 4px 0;">
+      <span style="width: 54px; flex: none; font-size: 8.5px; letter-spacing: 0.16em; color: #53749c;">GRIP</span>
+      <div style="flex: 1; height: 2px; background: #9fb6d2; position: relative;">
+        <span style="position: absolute; left: 20%; top: -4.5px; width: 11px; height: 11px; border-radius: 50%; background: #14314f;"></span>
+      </div>
+      <span style="width: 44px; text-align: right; font-size: 10px;">22</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 6px; margin: 4px 0;">
+      <span style="width: 54px; flex: none; font-size: 8.5px; letter-spacing: 0.16em; color: #53749c;">SUBJECT</span>
+      <div style="display: flex; gap: 6px; flex: none;">
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">MK-VI</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">MK-CX</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">HEPTA-T</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">HEPTAPOD</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid #14314f; background: #14314f; color: #e8eef6; white-space: nowrap;">BP-H01</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">HOWITZER</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">BOX RIG</span>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 6px; margin: 4px 0;">
+      <span style="width: 54px; flex: none; font-size: 8.5px; letter-spacing: 0.16em; color: #53749c;">ASSET</span>
+      <div style="display: flex; gap: 6px; flex: none;">
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">EXPORT GLB</span>
+        <span style="font-size: 9px; letter-spacing: 0.12em; padding: 3px 7px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">DUMP GRAPH</span>
+      </div>
+    </div>
+
+    <!-- Where the clip happens. -->
+    <div style="position: absolute; top: 0; bottom: 0; right: 0; width: 2px; background: #d06a2a;"></div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; gap: 3px; font-size: 9px; letter-spacing: 0.08em; color: #14314f;">
+    <div><span style="color: #d06a2a;">FREE</span> falls off the VIEW row.</div>
+    <div><span style="color: #d06a2a;">HOWITZER</span> and <span style="color: #d06a2a;">BOX RIG</span> fall off the SUBJECT row — no way to reach them.</div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

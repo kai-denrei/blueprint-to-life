@@ -10,3 +10,9 @@ node_modules/
 
 # Deban decision log — private working memory, not a published artifact.
 .deban/
+
+# Design-canvas build output. `design/*.dc.html` + canvas.json + the image ARE committed —
+# they are the source, and every later edit re-seeds from them. The seeded page beside them is
+# 2.4 MB of embedded editor with the artboards inlined into it, regenerated on demand, and the
+# published Artifact is where anyone actually looks at it.
+design/controls-panel-overflow.html

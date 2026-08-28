@@ -1,0 +1,91 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace; }
+    a { color: #d06a2a; } a:hover { color: #a8541f; }
+  </style>
+</helmet>
+
+<!-- 390 x 844. The drawing behind the sheet is a real capture of the running build, so the
+     proportion the sheet leaves is honest rather than sketched. -->
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #dbe3ee;">
+
+  <img src="phone-drawing.jpg" alt="" style="position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: top center;">
+
+  <!-- CTRL sheet: capped at 44dvh so the drawing keeps the upper half. -->
+  <div style="position: absolute; left: 0; right: 0; bottom: 86px; max-height: 371px; overflow: hidden; background: #e8eef6; border-top: 1px solid rgba(20,49,79,0.34); color: #14314f; font-size: 12px; letter-spacing: 0.04em; padding: 12px 14px 16px;">
+
+    <!-- SUBJECT first. The sheet is capped and scrolls, so row order is reach: what you are
+         looking at goes above how it is posed. Left last it sat under seven sliders,
+         permanently below the fold. -->
+    <div style="display: flex; align-items: flex-start; gap: 9px; margin: 9px 0; padding-bottom: 10px; border-bottom: 1px solid rgba(20,49,79,0.34);">
+      <span style="width: 58px; flex: none; padding-top: 9px; font-size: 9.5px; letter-spacing: 0.16em; color: #53749c;">SUBJECT</span>
+      <div style="flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">MK-VI</span>
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">MK-CX</span>
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">HEPTA-T</span>
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">HEPTAPOD</span>
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid #14314f; background: #14314f; color: #e8eef6; white-space: nowrap;">BP-H01</span>
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">HOWITZER</span>
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">BOX RIG</span>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: flex-start; gap: 9px; margin: 9px 0;">
+      <span style="width: 58px; flex: none; padding-top: 9px; font-size: 9.5px; letter-spacing: 0.16em; color: #53749c;">MODE</span>
+      <div style="flex: 1; min-width: 0; display: flex; flex-wrap: wrap; gap: 6px;">
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid #14314f; background: #14314f; color: #e8eef6; white-space: nowrap;">BLUEPRINT</span>
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">GAME / PBR</span>
+        <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid #14314f; background: #14314f; color: #e8eef6; white-space: nowrap;">CALLOUTS</span>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 9px; margin: 9px 0;">
+      <span style="width: 58px; flex: none; font-size: 9.5px; letter-spacing: 0.16em; color: #53749c;">EXPLODE</span>
+      <div style="flex: 1; height: 26px; position: relative; display: flex; align-items: center;">
+        <div style="width: 100%; height: 2px; background: #9fb6d2;"></div>
+        <span style="position: absolute; left: 0; width: 24px; height: 24px; border-radius: 50%; background: #14314f;"></span>
+      </div>
+      <span style="width: 44px; text-align: right; font-size: 12px;">0</span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 9px; margin: 9px 0;">
+      <span style="width: 58px; flex: none; font-size: 9.5px; letter-spacing: 0.16em; color: #53749c;">STANCE</span>
+      <div style="flex: 1; height: 26px; position: relative; display: flex; align-items: center;">
+        <div style="width: 100%; height: 2px; background: #9fb6d2;"></div>
+        <span style="position: absolute; left: 46%; width: 24px; height: 24px; border-radius: 50%; background: #14314f;"></span>
+      </div>
+      <span style="width: 44px; text-align: right; font-size: 12px;">50</span>
+    </div>
+
+    <!-- Scroll cue: the sheet is capped, so the remaining joints are below the fold. -->
+    <div style="height: 22px; margin: -6px -14px -16px; background: linear-gradient(to bottom, rgba(232,238,246,0), #e8eef6);"></div>
+  </div>
+
+  <!-- Bottom bar, unchanged. -->
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; height: 86px; padding: 6px 8px; background: #e8eef6; border-top: 1px solid rgba(20,49,79,0.34); display: flex; flex-direction: column; gap: 5px;">
+    <div style="display: flex; gap: 5px; padding-bottom: 5px; overflow: hidden;">
+      <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid #14314f; background: #14314f; color: #e8eef6; white-space: nowrap;">ISO</span>
+      <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">FRONT</span>
+      <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">REAR</span>
+      <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">SIDE</span>
+      <span style="font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34); white-space: nowrap;">PLAN</span>
+    </div>
+    <div style="display: flex; gap: 5px;">
+      <span style="flex: 1; text-align: center; font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34);">KEY</span>
+      <span style="flex: 1; text-align: center; font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid rgba(20,49,79,0.34);">DATA</span>
+      <span style="flex: 1; text-align: center; font-size: 10px; letter-spacing: 0.12em; padding: 8px 11px; border: 1px solid #14314f; background: #14314f; color: #e8eef6;">CTRL</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+</body>
+</html>

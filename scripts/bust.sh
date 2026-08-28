@@ -44,11 +44,17 @@ TOKEN=$(od -An -N4 -tx1 < /dev/urandom | tr -d ' \n')
 
 # ---------- 1. Fingerprint same-origin asset URLs ----------
 if [[ -f "$SKILL_DIR/scripts/fingerprint-urls.py" ]]; then
-  python3 "$SKILL_DIR/scripts/fingerprint-urls.py" "$TOKEN" --target . $QUIET
+  python3 "$SKILL_DIR/scripts/fingerprint-urls.py" "$TOKEN" --target . --skip design $QUIET
 fi
 
 # File walker. Returns extension-filtered paths, excluding build/vendor dirs
 # and the badge JS (which has a literal `<meta name="cb">` string in a comment).
+#
+# design/ is excluded too. It holds design-canvas source, which is not served by this site:
+# fingerprinting its asset URLs rewrote `<script src="./support.js">` — a line the canvas
+# runtime matches literally — and the image reference beside it, silently breaking both.
+# The same class of bug as the `<meta name="cb">` gotcha in the README: this walker rewrites
+# every file it can parse, so anything HTML-shaped that is not the site has to be kept out.
 # Avoids the EXT_FILTER+eval pattern that breaks under glob expansion (e.g. when
 # `*.htm` matches nothing and find sees an unparseable token).
 walk_source_files() {
@@ -61,6 +67,7 @@ walk_source_files() {
     -not -path '*/.next/*' \
     -not -path '*/.nuxt/*' \
     -not -path '*/public/cb-shapes/*' \
+    -not -path './design/*' \
     -not -name 'cb-badge.js'
 }
 

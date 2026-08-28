@@ -149,6 +149,12 @@ def main():
     ap.add_argument("token", help="cache-bust token, e.g. cbd1dddb")
     ap.add_argument("--target", default=".", help="project root (default: .)")
     ap.add_argument("--quiet", action="store_true", help="suppress per-file output")
+    # Project addition: some HTML in a repo is source for something else and must not be
+    # fingerprinted. This project keeps design-canvas artboards under design/, whose runtime
+    # matches `<script src="./support.js">` literally — stamping a ?v= on it silently broke
+    # the canvas. Dot-directories are already skipped by walk_target; this is for the rest.
+    ap.add_argument("--skip", action="append", default=[], metavar="DIR",
+                    help="directory name to skip, repeatable")
     args = ap.parse_args()
 
     target = Path(args.target).resolve()
@@ -156,7 +162,7 @@ def main():
         sys.exit("target directory does not exist: " + str(target))
 
     n_files, n_changes = 0, 0
-    for f in walk_target(target, set(DEFAULT_SKIP_DIRS)):
+    for f in walk_target(target, set(DEFAULT_SKIP_DIRS) | set(args.skip)):
         ext = f.suffix.lower()
         if ext not in (".html", ".htm", ".css"):
             continue

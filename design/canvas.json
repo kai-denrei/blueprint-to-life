@@ -1,0 +1,54 @@
+{
+  "artboards": [
+    {
+      "file": "Before.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 460,
+      "h": 400,
+      "title": "Before \u2014 desktop"
+    },
+    {
+      "file": "Main.dc.html",
+      "x": 560,
+      "y": 0,
+      "w": 460,
+      "h": 460,
+      "title": "After \u2014 desktop"
+    },
+    {
+      "file": "Mobile.dc.html",
+      "x": 1120,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "After \u2014 phone 390\u00d7844"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "note-before",
+      "x": 0,
+      "y": -150,
+      "w": 440,
+      "text": "Current build. Each .ctl-row is one non-wrapping flex line inside a 340px panel.\nFREE is clipped off VIEW; HOWITZER and BOX RIG are clipped off SUBJECT \u2014 two vehicles you cannot select at all."
+    },
+    {
+      "id": "note-fix",
+      "x": 560,
+      "y": -150,
+      "w": 440,
+      "text": "The fix. The buttons move into their own wrapping group; the 54px label column stays fixed and top-aligns.\nRows grow downward instead of running off the edge, so a seventh or eighth subject costs a line, never a button."
+    },
+    {
+      "id": "note-mobile",
+      "x": 1120,
+      "y": -150,
+      "w": 380,
+      "text": "Phone. Same wrap \u2014 every subject reachable \u2014 and the sheet capped at 44dvh (was 56dvh/460px) so the drawing keeps the upper half.\nSUBJECT is promoted to the top of the sheet: the sheet scrolls, so the row you reach for goes above the pose sliders. VIEW stays in the bar, where it already was."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

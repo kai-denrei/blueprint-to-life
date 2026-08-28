@@ -47,6 +47,37 @@ CTRL), one open at a time; in short landscape they become a right-hand drawer in
 a bottom sheet at that height covers the entire drawing. Same chrome either way — the panels
 keep updating whether open or not, so there is no second code path for small screens.
 
+### The control rows had a growth bug
+
+Every button row in the CTRL panel used to be a single non-wrapping flex line inside a
+fixed-width panel, which works until the row is wider than the panel — and then the surplus is
+simply not there. By the sixth subject, `FREE` had fallen off the VIEW row and `HOWITZER` and
+`BOX RIG` off the SUBJECT row on desktop; on a 390 px phone three subjects were unreachable,
+including the newest one. Nothing indicated it: the panel just ended.
+
+The fix is that the buttons now sit in their own wrapping group (`.ctl-opts`) rather than being
+direct children of the row. Wrapping the row itself would have let the 54 px key wrap down with
+the buttons and the labels would stop lining up; wrapping only the buttons keeps the label
+column intact and lets a row grow downward. Another subject now costs a line, never a button.
+
+Two consequences worth recording, because both are about the phone rather than the desktop:
+
+- **The sheet was capped.** At `56dvh` the CTRL sheet plus the 86 px bar covered ~63% of a
+  390×844 screen — you were posing a model you could no longer see. It is `44dvh` now. The
+  sheet already scrolled, so the cap costs reach, not content.
+- **Row order is reach.** In a capped, scrolling sheet the last row is permanently below the
+  fold, and the last row was SUBJECT — under seven joint sliders. It is ordered to the top on
+  small screens: what you are looking at goes above how it is posed. That reorder is a
+  stylesheet concern, so each option row carries a `opt-<name>` modifier class and the media
+  query does the rest; the old rule hid the VIEW row with `:first-child`, which was correct
+  only for as long as VIEW stayed first — exactly the assumption the phone layout wanted to
+  break.
+
+The build badge collided with both layouts once the panel grew (it is pinned `bottom: 8px;
+right: 8px` by `cb-badge.js`, inside the controls panel's own corner). The desktop panel steps
+up out of that corner so the badge reads as its footer, and on a phone the badge fades while a
+sheet is open — the build token is in the DATA sheet anyway.
+
 ## Layout
 
 ```
@@ -171,6 +202,13 @@ fingerprint the module graph.
 walks, not just HTML. Do not write that tag as a literal in source; assemble it. See the last
 test in `test/invariants.test.js`.
 
+**The same gotcha, second form.** The fingerprinter rewrites `src=`/`href=` in every `.html` it
+walks too — including HTML that is source for something other than this site. `design/` holds
+design-canvas artboards whose runtime matches `<script src="./support.js">` literally, and a
+stamped `?v=` on that line silently broke the canvas. `fingerprint-urls.py` now takes a
+repeatable `--skip DIR`, and `bust.sh` passes `--skip design`. Both files are owned by the
+cache-busting installer, so re-running it drops these edits — the same standing risk as the
+service-worker token stamp two paragraphs down.
 
 ## Installable and offline
 
