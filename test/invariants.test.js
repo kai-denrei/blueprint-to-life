@@ -21,6 +21,8 @@ import { buildHeptat } from '../src/heptat/buildHeptat.js';
 import { HTDIM, rng } from '../src/heptat/dimensions.js';
 import { buildHeptapod, updateHeptapodStance } from '../src/heptapod/buildHeptapod.js';
 import { HPDIM, legSolve, legLayout, footSpan } from '../src/heptapod/dimensions.js';
+import { buildHeadless, updateHeadlessStance } from '../src/headless/buildHeadless.js';
+import { BHDIM, crownHeight, crownPoint, stand } from '../src/headless/dimensions.js';
 import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
 import { HDIM, trailLayout } from '../src/howitzer/dimensions.js';
 import { applyExplode, collectExplodable } from '../src/lib/parts.js';
@@ -38,6 +40,7 @@ const tank = buildTank();
 const mkcx = buildMkcx();
 const heptat = buildHeptat();
 const heptapod = buildHeptapod();
+const headless = buildHeadless();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -51,16 +54,23 @@ const byName = (n) => tank.getObjectByName(n);
  * choice was to make the contract conditional or to bolt decorative running gear onto a
  * hovering vehicle so a checklist stayed green — and a contract that forces geometry to exist
  * for the test's benefit has stopped describing the thing it tests.
+ *
+ * `armed` is the same shape of flag, added by BP-Headless01 — an unarmed exoframe with hands
+ * instead of a gun. Worth noting what it cost, because it was almost nothing: unlike wheels,
+ * "vehicles are armed" had never leaked into the shared contract, only into each subject's own
+ * `required` list. The flag exists to check the *negative* case, which is the one that rots: a
+ * frame that still carries a turret ring or a breech after the weapon was cut looks like the
+ * edit was abandoned halfway, exactly as leftover running gear does on the MK-CX.
  */
 const MODELS = [
   {
-    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision', wheels: true,
+    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision', wheels: true, armed: true,
     required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Turret_Pivot', 'Barrel_Pivot'],
   },
   {
-    name: 'mkcx', root: mkcx, rootName: 'MKCX_Root', collision: 'Hull_Collision', wheels: false,
+    name: 'mkcx', root: mkcx, rootName: 'MKCX_Root', collision: 'Hull_Collision', wheels: false, armed: true,
     required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Details_Group', 'Hover_Gear',
                'Nacelle_L', 'Nacelle_R', 'Secondary_Turrets',
@@ -71,7 +81,7 @@ const MODELS = [
              'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
   },
   {
-    name: 'heptat', root: heptat, rootName: 'HeptaT_Root', collision: 'Chassis_Collision', wheels: true,
+    name: 'heptat', root: heptat, rootName: 'HeptaT_Root', collision: 'Chassis_Collision', wheels: true, armed: true,
     required: ['Chassis_Mesh', 'Chassis_Collision', 'Cab_Mesh', 'CargoBay_Mesh',
                'Ramp_Pivot', 'Ramp_Mesh', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
@@ -81,7 +91,7 @@ const MODELS = [
     // A walker: no wheels, and its ride height is leg state rather than a dimension. The
     // required list therefore names the leg chain, because "the legs exist and are articulated"
     // is this subject's equivalent of "the running gear is instanced".
-    name: 'heptapod', root: heptapod, rootName: 'Heptapod_Root', collision: 'Hull_Collision', wheels: false,
+    name: 'heptapod', root: heptapod, rootName: 'Heptapod_Root', collision: 'Hull_Collision', wheels: false, armed: true,
     required: ['Body_Group', 'Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Details_Group', 'Reactor_Mesh',
                'Sensor_Suite_Mesh', 'Lidar_Array', 'Leg_1L_Mount', 'Leg_4R_Tibia',
@@ -90,7 +100,20 @@ const MODELS = [
              'Leg_4L_Tibia', 'Foot_2R_Ankle', 'Arm_Shoulder_Pivot', 'Arm_Elbow_Pivot'],
   },
   {
-    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', wheels: true,
+    // A biped, and the first unarmed subject. Its required list names the leg chain for the same
+    // reason the walker's does, and the hands because five driven digits a side are the machine's
+    // whole purpose — a frame that lost its fingers in a refactor is not this subject any more.
+    name: 'headless', root: headless, rootName: 'Headless_Root', collision: 'Torso_Collision',
+    wheels: false, armed: false,
+    required: ['Body_Group', 'Thorax_Mesh', 'Torso_Collision', 'Pelvis_Mesh', 'Details_Group',
+               'Waist_Yaw', 'Waist_Pitch', 'Chest_Hex', 'Core_Lens', 'Sensor_Band',
+               'Leg_L_Mount', 'Leg_R_Ankle', 'Foot_L_Sole', 'Foot_R_Sole',
+               'Shoulder_L_Pivot', 'Elbow_R_Pivot', 'Palm_L_Mesh', 'Thumb_R_Dist'],
+    pivots: ['Waist_Yaw', 'Waist_Pitch', 'Leg_L_Hip', 'Leg_R_Knee', 'Leg_L_Ankle',
+             'Shoulder_R_Pivot', 'Elbow_L_Pivot', 'Finger_L1_Prox', 'Thumb_R_Prox'],
+  },
+  {
+    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', wheels: true, armed: true,
     required: ['Chassis_Mesh', 'Chassis_Collision', 'Traverse_Pivot', 'TopCarriage_Mesh',
                'Elevation_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Traverse_Pivot', 'Elevation_Pivot', 'Trail_Front_L', 'Trail_Rear_R'],
@@ -198,6 +221,19 @@ for (const m of MODELS) {
         if (/RoadWheel|Sprocket|ReturnRoller|^Track_|Wheels_Instanced/i.test(o.name)) leftovers.push(o.name);
       });
       assert.deepEqual(leftovers, [], 'this subject declares no wheels but still carries some');
+    }
+  });
+
+  test(`[${m.name}] armament matches what the subject claims`, () => {
+    const WEAPON = /Turret|Barrel|Muzzle|Breech|Gun|AmmoDrum|CoilRing|Trunnion/i;
+    const found = [];
+    m.root.traverse((o) => { if (WEAPON.test(o.name)) found.push(o.name); });
+    if (m.armed) {
+      assert.ok(found.length > 0, 'an armed subject should carry a weapon');
+    } else {
+      // The mirror of the wheels check. A frame that kept its turret ring or its breech after
+      // the weapon was cut reads as an abandoned edit, and nothing else would notice.
+      assert.deepEqual(found, [], 'this subject declares no armament but still carries some');
     }
   });
 
@@ -500,6 +536,181 @@ test('[heptapod] the sentry is lit on both accent channels', () => {
   assert.deepEqual([...channels].sort(), [1, 2], 'expected parts on both accent channels');
 });
 
+console.log('\nthe biped — two feet, no head, and a height figure that has to be true');
+
+/** Lowest world Y actually reached by a mesh's vertices — not its transformed AABB. */
+function vertexExtremes(root, filter = () => true) {
+  const v = new THREE.Vector3();
+  let lo = Infinity, hi = -Infinity, name = '';
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh || o.userData.isCollision || !filter(o)) return;
+    const pos = o.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      lo = Math.min(lo, v.y);
+      if (v.y > hi) { hi = v.y; name = o.name; }
+    }
+  });
+  return { lo, hi, highest: name };
+}
+
+test('[headless] neutral pose is the midpoint of crouch and extend', () => {
+  // Same relation the walker needs, and for the same reason: STANCE maps min..max linearly onto
+  // every target, so its default of 50 lands on the rest posture only if neutral IS the midpoint.
+  const { crouch, neutral, extend } = BHDIM.leg.pose;
+  neutral.forEach((v, i) => {
+    assert.equal(Number(((crouch[i] + extend[i]) / 2).toFixed(6)), v,
+      `pose limb ${i}: neutral is not halfway between crouch and extend`);
+  });
+  assert.equal((BHDIM.torso.lean.min + BHDIM.torso.lean.max) / 2, BHDIM.torso.lean.rest,
+    'the torso lean default is not the midpoint of its range, so the drawing rests off-pose');
+});
+
+test('[headless] both soles are flat on the ground at every stance', () => {
+  for (const v of [0, 25, 50, 75, 100]) {
+    setJoint(headless, 'stance', v, updateHeadlessStance);
+    const soles = [];
+    headless.traverse((o) => {
+      if (!/^Foot_[LR]_Sole$/.test(o.name)) return;
+      o.geometry.computeBoundingBox();
+      soles.push(o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld).min.y);
+    });
+    assert.equal(soles.length, 2, 'expected two soles');
+    for (const y of soles) {
+      assert.ok(Math.abs(y) < 0.002, `stance ${v}: a sole sits at y=${y.toFixed(4)}, not on the ground`);
+    }
+  }
+  setJoint(headless, 'stance', 50, updateHeadlessStance);
+});
+
+test('[headless] the foot frame stays world-aligned through the whole fold', () => {
+  // This is the claim `bipedPivots` makes: mount + hip + knee + ankle cancel to identity, which
+  // is what keeps the sole flat with no IK. Checking the sole's y-extent rather than its lowest
+  // point is what distinguishes "flat" from "one corner happens to touch".
+  for (const v of [0, 50, 100]) {
+    setJoint(headless, 'stance', v, updateHeadlessStance);
+    const sole = headless.getObjectByName('Foot_L_Sole');
+    sole.geometry.computeBoundingBox();
+    const bb = sole.geometry.boundingBox.clone().applyMatrix4(sole.matrixWorld);
+    assert.ok(bb.max.y - bb.min.y < BHDIM.leg.foot.sole.height + 0.002,
+      `stance ${v}: the sole is canted — its y-extent is ${(bb.max.y - bb.min.y).toFixed(4)}`);
+  }
+  setJoint(headless, 'stance', 50, updateHeadlessStance);
+});
+
+test('[headless] the hip stays over the ankle at every stance', () => {
+  // A walker with eight feet has a stability polygon it can be sloppy inside. Two feet in a row
+  // have none: let the ankle drift forward as the knees bend and the drawing shows a machine in
+  // the act of falling, which reads as a mistake rather than as a pose.
+  const half = BHDIM.leg.foot.sole.depth / 2;
+  for (const p of [BHDIM.leg.pose.crouch, BHDIM.leg.pose.neutral, BHDIM.leg.pose.extend]) {
+    const { reach } = stand(p);
+    assert.ok(Math.abs(reach) < half,
+      `pose ${p.join('/')}: the ankle lands ${reach.toFixed(3)} m from under the hip, outside the sole`);
+  }
+});
+
+test('[headless] folding the legs actually lowers the body', () => {
+  const heights = [];
+  for (const v of [0, 50, 100]) {
+    setJoint(headless, 'stance', v, updateHeadlessStance);
+    heights.push(headless.getObjectByName('Body_Group').position.y);
+  }
+  assert.ok(heights[0] < heights[1] && heights[1] < heights[2],
+    `hip height should rise with stance, got ${heights.map((h) => h.toFixed(3)).join(' / ')}`);
+  assert.ok(heights[2] - heights[0] > 0.3, 'the stance range is too small to be worth a slider');
+  setJoint(headless, 'stance', 50, updateHeadlessStance);
+  assert.equal(
+    Number(headless.getObjectByName('Body_Group').position.y.toFixed(6)),
+    Number(stand(BHDIM.leg.pose.neutral).hipHeight.toFixed(6)),
+    'the rest height the drawing quotes is not the height the graph produces',
+  );
+});
+
+test('[headless] the quoted height is the height the graph actually reaches', () => {
+  /**
+   * The one that caught a real bug. `extrudeProfile` scales BOTH caps toward the profile
+   * centroid, so the full-size profile is never in the mesh — the first version of
+   * `crownHeight()` read the raw profile and over-quoted the machine by 9 cm. Nothing else in
+   * the project would have noticed: the drawing would simply have printed a number about a
+   * different object.
+   *
+   * Vertices, not bounding boxes. A transformed AABB of a rotated cylinder is inflated by up to
+   * its own diagonal, which here is larger than the tolerance being asserted.
+   */
+  setJoint(headless, 'stance', 50, updateHeadlessStance);
+  setJoint(headless, 'lean', BHDIM.torso.lean.rest);
+  const { hi, highest } = vertexExtremes(headless);
+  const quoted = crownHeight();
+  assert.ok(Math.abs(hi - quoted) < 0.01,
+    `title block says ${quoted.toFixed(3)} m, the graph reaches ${hi.toFixed(3)} m (at ${highest})`);
+  assert.equal(highest, 'Thorax_Mesh',
+    `the crown should be the carapace, not ${highest} — the height figure is derived from the shell profile`);
+});
+
+test('[headless] the carapace crown accounts for the extrusion taper', () => {
+  // Guards the fix directly, so a later "simplification" back to Math.max(profile.y) fails here
+  // rather than silently in the title block.
+  const [, y] = crownPoint();
+  const raw = Math.max(...BHDIM.torso.profile.map(([, py]) => py));
+  assert.ok(y < raw, 'crownPoint() is not applying the taper the generator applies');
+});
+
+test('[headless] one GRIP slider drives every digit, and the hand rests where the slider does', () => {
+  const grip = headless.userData.joints.find((j) => j.key === 'grip');
+  assert.equal(grip.targets.length, 20, 'expected two driven segments on each of ten digits');
+  assert.equal(grip.value, BHDIM.hand.rest,
+    'the slider default must equal the percentage the geometry was authored at');
+
+  // The authored rest pose and the slider default have to agree, or the exported GLB ships a
+  // hand the drawing never shows. They agree by construction — this is what holds it.
+  const prox = headless.getObjectByName('Finger_L1_Prox');
+  assert.equal(
+    Number((prox.rotation.x * 180 / Math.PI).toFixed(6)),
+    Number((BHDIM.hand.curl.proximal * BHDIM.hand.rest / 100).toFixed(6)),
+    'the authored finger curl is not the curl the GRIP default produces',
+  );
+
+  // Ten distinct digits, not one geometry cloned ten times — a shared geometry is a shared part
+  // id, and the outline pass would stop drawing the gap between two closed fingers.
+  const geoms = new Set();
+  let segments = 0;
+  headless.traverse((o) => {
+    if (!o.isMesh || !/^(Finger|Thumb)_[LR].*_Mesh$/.test(o.name)) return;
+    segments++; geoms.add(o.geometry);
+  });
+  assert.equal(segments, 20, 'expected twenty finger segments');
+  assert.equal(geoms.size, 20, 'finger segments share geometry, so they share a part id');
+});
+
+test('[headless] the waist splits twist and lean across two nodes', () => {
+  // One node driven on two axes would compose them in a fixed Euler order, and the declared-joint
+  // contract gives each target exactly one node and one axis. Splitting them is what lets the
+  // viewer drive both without knowing either.
+  const twist = headless.getObjectByName('Waist_Yaw');
+  const lean = headless.getObjectByName('Waist_Pitch');
+  assert.equal(lean.parent.name, 'Waist_Yaw', 'lean must hang below twist');
+  assert.equal(Number(twist.rotation.x.toFixed(6)), 0, 'the twist node must carry no pitch');
+  assert.equal(Number(lean.rotation.y.toFixed(6)), 0, 'the lean node must carry no yaw');
+});
+
+test('[headless] the sensor band is lit — it is the only thing on the machine that looks at you', () => {
+  // With no head there is no cupola, no optics block and no gun sight. The band and the core
+  // lens are the entire read of "this is powered and facing you", and both display modes have to
+  // agree about it: the blueprint pass renders with an overrideMaterial and never sees a
+  // material, so a glow expressed only in MeshStandardMaterial.emissive would vanish there.
+  for (const name of ['Sensor_Band', 'Core_Lens']) {
+    const node = headless.getObjectByName(name);
+    assert.ok(node.userData.emissive, `${name} is not on an accent channel`);
+    assert.equal(node.geometry.getAttribute('emissive').array[0], node.userData.emissive,
+      `${name} carries no emissive vertex attribute`);
+  }
+  const channels = new Set();
+  headless.traverse((o) => { if (o.isMesh && o.userData.emissive) channels.add(o.userData.emissive); });
+  assert.deepEqual([...channels].sort(), [1, 2], 'expected parts on both accent channels');
+});
+
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
@@ -542,7 +753,7 @@ console.log('\nasset / display boundary');
 
 test('asset code never imports from display code', () => {
   const offenders = [];
-  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'howitzer'].map((d) => join(ROOT, 'src', d));
+  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'howitzer'].map((d) => join(ROOT, 'src', d));
   for (const file of assetDirs.flatMap(walk)) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
@@ -573,7 +784,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="08c7ff48">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="f8b740ae">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

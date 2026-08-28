@@ -226,7 +226,7 @@ addEventListener('keydown', (e) => {
     setMode(state.mode === 'blueprint' ? 'pbr' : 'blueprint');
   } else if (e.key === 'c') {
     state.showCollision = !state.showCollision;
-    const proxy = root.getObjectByName('Hull_Collision') || root.getObjectByName('Chassis_Collision');
+    const proxy = findCollisionProxy(root);
     if (proxy) proxy.visible = state.showCollision;
   } else if (e.key === 'h') {
     app.classList.toggle('hide-chrome');
@@ -245,7 +245,7 @@ function exportGLB() {
   // Reset articulation and explode so the exported rest pose is the authored one.
   const savedExplode = state.explode;
   applyExplode(root, 0);
-  const proxy = root.getObjectByName('Hull_Collision') || root.getObjectByName('Chassis_Collision');
+  const proxy = findCollisionProxy(root);
   const proxyWasVisible = proxy?.visible;
   if (proxy) proxy.visible = true;    // the proxy must survive export; visibility is display state
 
@@ -286,6 +286,22 @@ function dumpGraph() {
 }
 
 // --- helpers ---------------------------------------------------------------
+
+/**
+ * The collision proxy, found by the flag the asset already sets.
+ *
+ * This used to be `getObjectByName('Hull_Collision') || getObjectByName('Chassis_Collision')`,
+ * which is display code holding a list of asset node names — and the list was one name short
+ * every time a subject named its proxy something else. `userData.isCollision` is the actual
+ * contract (the invariant suite asserts it on every model), so reading that instead means a new
+ * subject can call its proxy whatever its geometry deserves. Same argument as the subject
+ * registry replacing a hardcoded list of ids.
+ */
+function findCollisionProxy(root) {
+  let found = null;
+  root.traverse((o) => { if (!found && o.userData?.isCollision) found = o; });
+  return found;
+}
 
 function countNodes(o) {
   let n = 0;

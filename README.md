@@ -3,9 +3,10 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Five subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the **Hepta-T**
-6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, and an M777-pattern 155 mm
-towed howitzer — plus a primitives rig for debugging the shader.
+Six subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the **Hepta-T**
+6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01** (a headless
+bipedal exoframe), and an M777-pattern 155 mm towed howitzer — plus a primitives rig for
+debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -28,6 +29,9 @@ npm start             # http://127.0.0.1:5173/
 - `/?subject=heptapod` — Heptapod Walker, an eight-legged autonomous sentry: a 30 mm rail gun
   on a gyro ring, twenty-four driven limb pivots behind two sliders, and a ride height that is
   computed from the legs rather than authored
+- `/?subject=headless` — BP-Headless01, a headless powered exoframe: no head and no weapon at
+  all, a hunched carapace whose only aperture is a lit sensor band on the chest, two legs whose
+  fold sets the ride height, and five driven digits on each hand
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -51,6 +55,7 @@ src/tank/       asset: MK-VI main battle tank
 src/mkcx/       asset: MK-CX
 src/heptat/     asset: Hepta-T
 src/heptapod/   asset: Heptapod Walker
+src/headless/   asset: BP-Headless01
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -60,8 +65,8 @@ src/pwa/        registration, update-on-consent, install prompt, connectivity
 server/serve.js static server with the cache-control split the busting layer needs
 ```
 
-Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/howitzer`)
-must not import from display code, and
+Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/headless`,
+`src/howitzer`) must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -111,8 +116,9 @@ turret rings, trunnions or trail hinges.
 
 The howitzer's third joint swings four trail hinges from a towing package to a firing
 cruciform. The MK-CX declares four joints, the last two driving a remote weapon station that
-traverses and elevates independently of the main gun. Neither required viewer code: the sliders,
-the readouts and the sign conventions all come from the graph.
+traverses and elevates independently of the main gun. BP-Headless01's GRIP joint closes twenty
+finger segments. None of them required viewer code: the sliders, the readouts and the sign
+conventions all come from the graph.
 
 Subjects may also declare `afterArticulate(root)` for fix-ups the scene graph cannot express.
 The howitzer needs one: its two road wheels are a single `InstancedMesh` (the same contract the
@@ -164,6 +170,7 @@ fingerprint the module graph.
 **Gotcha:** `scripts/bust.sh` rewrites `<meta name="cb" content="...">` in *every* file it
 walks, not just HTML. Do not write that tag as a literal in source; assemble it. See the last
 test in `test/invariants.test.js`.
+
 
 ## Installable and offline
 
@@ -275,6 +282,80 @@ resolved it in favour of the drawing. The designation is carried as a programme 
 count is stated on its own line in the title block, which is what a real drawing would do with an
 inherited name that stopped describing the thing.
 
+### What the headless frame cost
+
+BP-Headless01 is the second legged subject and the first unarmed one: a bipedal exoframe with a
+hunched carapace, no head at all, and five driven digits on each hand instead of a gun. It cost
+two asset files, one descriptor, one registry line, one shared generator and one small change in
+`main.js` — and the renderer, the composite, the camera and the chrome were not touched.
+
+Three results are worth stating precisely, because two of them are about what *didn't* happen.
+
+**Ride height turned out to be a legged feature, not a walker feature.** `afterArticulate` was
+added for the howitzer's trail-mounted wheels and pressed into service for the walker's hull
+height; the biped uses it in exactly the same shape, reading two limb angles instead of three.
+That is the evidence the hook generalised rather than being a walker-specific escape hatch. What
+does *not* generalise is the solve itself — two segments versus three, measured from a different
+zero — so `src/headless/dimensions.js` has its own `stand()` rather than importing the walker's.
+Sharing the pose maths would have coupled two machines that have nothing mechanical in common
+beyond the fact that they both stand up.
+
+**"Vehicles are armed" was never in the contract.** The MK-CX had to teach the shared invariant
+list that a vehicle might have no wheels, because `Wheels_Instanced` had been required of
+everything. Nothing equivalent happened here: a weapon only ever appeared in each subject's own
+`required` list, so an unarmed subject needed no concession at all. The `armed` flag that now
+sits beside `wheels` was added for the *negative* case only — an unarmed frame must be checked
+for leftover turret rings, breeches and coil housings, exactly as the MK-CX is checked for
+leftover road wheels. A machine still carrying the mounts for a weapon it no longer has looks
+like the edit was abandoned halfway.
+
+**A biped has no stability margin to be sloppy inside.** Eight feet give the walker a support
+polygon it can land anywhere in; two feet in a row give none. So the leg pose table is authored
+against a second constraint the walker never needed — the ankle has to stay under the hip
+through the *entire* fold, not merely on the ground — and there is an invariant that says the
+hip/ankle offset never leaves the sole. The related trick is that the ankle pivot carries the
+negated shin angle minus the mount's 90°, which cancels the whole chain and leaves the foot
+frame world-aligned. That, and not an IK solver, is what keeps both soles flat at every stance;
+the invariant checks the sole's y-*extent*, not just its lowest point, because "one corner is
+touching" and "flat on the ground" are different things and only the second one is wanted.
+
+The one genuinely new shared generator is `cableRun` — a hose swept along a curve. The reference
+sheet's signature is loom: bundles over both shoulders, three conduits down the spine, a run down
+each calf, and none of that is an extrusion, a lathe or a box. Unlike `taperedBeam` it is mostly
+a wrapper over `TubeGeometry`, and the honest justification is narrower: what it adds is the
+contract the rest of that module keeps — non-indexed so the facets stay hard, `uv/uv1/uv2`
+written, and a radial count chosen for a hard-surface hose. The constraint it carries in its
+docstring is the load-bearing part: **a run must stay inside one rigid frame**, because there is
+no skinning anywhere in this project and a hose authored across a driven pivot tears the moment
+the joint moves. Every cable here stops at the shroud of the joint it appears to cross.
+
+#### The bug the height figure caught
+
+The title block quotes an overall height, and like the walker's figures it is derived rather than
+typed — leg solve, plus the waist, plus the crown of the carapace. The first version read that
+crown off `torso.profile` with `Math.max`, which was wrong by 9 cm: `extrudeProfile` scales
+**both** caps toward the profile centroid, so the full-size profile never appears in the mesh at
+all. The shell is the *tapered* profile swept between two tapered caps.
+
+Nothing in the project would have noticed. The drawing would simply have printed a confident
+2.68 m about a 2.59 m object, and the only way to find it is to measure the render. So the
+invariant does exactly that: it walks the built vertices — not bounding boxes, because a
+transformed AABB of a rotated cylinder is inflated by its own diagonal, which here is larger than
+the tolerance being asserted — and requires that the highest point in the graph is within a
+centimetre of the quoted figure *and* that the mesh it belongs to is the carapace. That second
+clause is what forced the loom, the spine cover and the dorsal conduits down under the shell
+instead of letting a hose quietly become the tallest thing on the machine.
+
+#### One change in display code
+
+`main.js` used to find the collision proxy with
+`getObjectByName('Hull_Collision') || getObjectByName('Chassis_Collision')` — display code
+holding a list of asset node names, one short every time a subject named its proxy something
+else. This subject's proxy is `Torso_Collision`, which would have made the list three long. It
+reads `userData.isCollision` instead, which is the actual contract and is what the invariant
+suite has always asserted. Same argument as the subject registry replacing a hardcoded list of
+ids: a menu is not a reason for the viewer to know what it is drawing.
+
 ## Deployed
 
 Live at **https://kai-denrei.github.io/blueprint-to-life/** — GitHub Pages, straight from
@@ -319,6 +400,12 @@ is one line in `MODELS`, and anything it breaks is a real incompatibility.
 These assert the properties the spec calls the deliverable, not pixels. A screenshot test would
 assert the display mode, which is explicitly not the asset.
 
+Two flags keep the shared list honest about what a subject actually is: `wheels` (added by the
+MK-CX, which hovers) and `armed` (added by BP-Headless01, which has hands instead of a gun).
+Both check the negative case as well as the positive one — a subject that declares no running
+gear must carry none, and a subject that declares no armament must not still be carrying a
+breech.
+
 For anything needing a live WebGL context there is a headless harness that drives Chrome over
 CDP using nothing but Node's built-in WebSocket:
 
@@ -357,7 +444,7 @@ different failure from no network.
 | 2 — blueprint shader | done. Prototyped against primitives first; that rig is kept at `?subject=box`. |
 | 3 — camera | done. Ortho elevations, perspective iso, snap-and-crossfade across projection types. |
 | 4 — chrome | done, subject-driven. Pointing it at something other than a tank is a new file in `src/subjects/`, not a layout change. |
-| 5 — export | partial. GLB round-trips correctly: spec node names survive, `Turret_Pivot.translation` is `[0, 1.66, -0.35]`, `Barrel_Pivot` stays its child at the trunnion, TEXCOORD_1 is present, wheels survive as `EXT_mesh_gpu_instancing`. **Nothing has imported it into a second engine**, so "engine-portable" is a well-formed-file claim, not a tested rigging claim. No LOD tiers. |
+| 5 — export | partial. GLB round-trips correctly: spec node names survive, `Turret_Pivot.translation` is `[0, 1.66, -0.35]`, `Barrel_Pivot` stays its child at the trunnion, TEXCOORD_1 is present, wheels survive as `EXT_mesh_gpu_instancing`. The round-trip probe resolves everything it checks from the subject's own declared joints, so it runs unchanged on the unarmed, wheel-less, legged subjects too — BP-Headless01 exports 163 nodes with its waist and arm pivot chains intact. **Nothing has imported it into a second engine**, so "engine-portable" is a well-formed-file claim, not a tested rigging claim. No LOD tiers. |
 
 ### On reference material
 

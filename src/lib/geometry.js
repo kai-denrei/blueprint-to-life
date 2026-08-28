@@ -258,3 +258,31 @@ export function mergeNonIndexed(geoms) {
   out.computeBoundingSphere();
   return out;
 }
+
+/**
+ * A hose swept along a curve, from control points.
+ *
+ * The headless exoframe's reference sheet is covered in loom — bundles over both shoulders,
+ * conduits down the spine, a run down each calf — and nothing above could make one. A cable is
+ * the one shape in this project that is neither an extrusion nor a lathe nor a box.
+ *
+ * Unlike `taperedBeam` this is mostly a wrapper, and it is worth being honest about that. What
+ * it adds over calling TubeGeometry directly is the contract the rest of this module keeps:
+ * non-indexed so `finish()` gives flat facets rather than a smooth plastic tube, uv/uv1/uv2
+ * written, and a low radial count chosen for a hard-surface hose rather than for a spline
+ * preview. Callers pass points; nobody outside here touches a curve object.
+ *
+ * A run must stay inside ONE rigid frame. There is no skinning anywhere in this project, so a
+ * hose authored across a driven pivot would tear the moment the joint moved.
+ *
+ * @param {Array<[number,number,number]>} points  control points in the parent's frame
+ * @param {object} [opts]
+ * @param {number} [opts.radius=0.03]
+ * @param {number} [opts.segments=20]   samples along the curve
+ * @param {number} [opts.radial=6]      sides around it
+ */
+export function cableRun(points, opts = {}) {
+  const { radius = 0.03, segments = 20, radial = 6 } = opts;
+  const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
+  return finish(new THREE.TubeGeometry(curve, segments, radius, radial, false).toNonIndexed());
+}
