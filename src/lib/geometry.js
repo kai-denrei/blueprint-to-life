@@ -286,3 +286,72 @@ export function cableRun(points, opts = {}) {
   const curve = new THREE.CatmullRomCurve3(points.map((p) => new THREE.Vector3(...p)));
   return finish(new THREE.TubeGeometry(curve, segments, radius, radial, false).toNonIndexed());
 }
+
+/**
+ * A tyre: an annular band about the X axis whose tread is CROWNED across its width.
+ *
+ * `trackBand` given a single circle already makes a hubless rim, and four of the five rings on
+ * the monocycle pod's wheels are exactly that. The tyre is not, and the reason is mechanical
+ * rather than cosmetic: that vehicle leans, and a flat-treaded tyre leaned over stands on its
+ * shoulder edge — which is further from the axle than the tread is, by sqrt(r^2 + (w/2)^2) - r.
+ * The machine would climb as it banked and the contact point would be a corner. A crowned tread
+ * puts a circular arc across the width, so the contact point migrates around the crown and the
+ * geometry keeps meaning something at every lean angle. See `rideLift` in the pod's dimensions
+ * for what falls out of it.
+ *
+ * A track never leans, so `trackBand` stays flat and is left alone.
+ *
+ * Windings are copied from `trackBand` deliberately — same axis, same surface order (tread,
+ * bore, two side walls), so the two read as the same family of shape and the outward faces
+ * agree.
+ *
+ * @param {object} opts
+ * @param {number} opts.radius     tread radius on the centreline
+ * @param {number} opts.thickness  tread down to the bore, at the centreline
+ * @param {number} opts.width      extent along X, centred on 0
+ * @param {number} opts.crown      radius of the tread arc across the width; must be >= width/2
+ * @param {number} [opts.segments=72]    samples around the circumference
+ * @param {number} [opts.crownSteps=16]  strips across the tread
+ */
+export function crownedTyre({ radius, thickness, width, crown, segments = 72, crownSteps = 16 }) {
+  const hw = width / 2;
+  const ri = radius - thickness;
+  // Tangent to `radius` on the centreline, falling away on an arc of radius `crown`.
+  const tread = (u) => radius - (crown - Math.sqrt(Math.max(crown * crown - u * u, 0)));
+
+  const pos = [], uv = [];
+  const P = (x, r, a) => [x, r * Math.sin(a), r * Math.cos(a)];
+
+  for (let i = 0; i < segments; i++) {
+    const j = (i + 1) % segments;
+    const aA = (i / segments) * Math.PI * 2;
+    const aB = (j / segments) * Math.PI * 2;
+    const u0 = i / segments, u1 = (i + 1) / segments;
+
+    // Tread, one strip per crown step.
+    for (let k = 0; k < crownSteps; k++) {
+      const xa = -hw + (k / crownSteps) * width;
+      const xb = -hw + ((k + 1) / crownSteps) * width;
+      const ra = tread(xa), rb = tread(xb);
+      const t0 = k / crownSteps, t1 = (k + 1) / crownSteps;
+      tri(pos, uv, P(xa, ra, aA), P(xb, rb, aA), P(xb, rb, aB), [u0, t0], [u0, t1], [u1, t1]);
+      tri(pos, uv, P(xa, ra, aA), P(xb, rb, aB), P(xa, ra, aB), [u0, t0], [u1, t1], [u1, t0]);
+    }
+
+    // Bore, reversed so it faces inward.
+    tri(pos, uv, P(-hw, ri, aA), P(hw, ri, aB), P(hw, ri, aA), [u0, 0], [u1, 1], [u0, 1]);
+    tri(pos, uv, P(-hw, ri, aA), P(-hw, ri, aB), P(hw, ri, aB), [u0, 0], [u1, 0], [u1, 1]);
+
+    // Side walls, from the bore out to whatever the crown left at the shoulder.
+    const rs = tread(hw);
+    tri(pos, uv, P(hw, ri, aA), P(hw, rs, aB), P(hw, rs, aA), [u0, 0], [u1, 1], [u0, 1]);
+    tri(pos, uv, P(hw, ri, aA), P(hw, ri, aB), P(hw, rs, aB), [u0, 0], [u1, 0], [u1, 1]);
+    tri(pos, uv, P(-hw, ri, aA), P(-hw, rs, aA), P(-hw, rs, aB), [u0, 0], [u0, 1], [u1, 1]);
+    tri(pos, uv, P(-hw, ri, aA), P(-hw, rs, aB), P(-hw, ri, aB), [u0, 0], [u1, 1], [u1, 0]);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return finish(geom);
+}

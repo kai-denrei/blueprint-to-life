@@ -22,6 +22,8 @@ import { HTDIM, rng } from '../src/heptat/dimensions.js';
 import { buildHeptapod, updateHeptapodStance } from '../src/heptapod/buildHeptapod.js';
 import { HPDIM, legSolve, legLayout, footSpan } from '../src/heptapod/dimensions.js';
 import { buildHeadless, updateHeadlessStance } from '../src/headless/buildHeadless.js';
+import { buildMotopod, updateMotopodRide } from '../src/motopod/buildMotopod.js';
+import { MPDIM, overallHeight, overallLength, overallWidth, rideLift, treadRadius } from '../src/motopod/dimensions.js';
 import { BHDIM, crownHeight, crownPoint, stand } from '../src/headless/dimensions.js';
 import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
 import { HDIM, trailLayout } from '../src/howitzer/dimensions.js';
@@ -41,6 +43,7 @@ const mkcx = buildMkcx();
 const heptat = buildHeptat();
 const heptapod = buildHeptapod();
 const headless = buildHeadless();
+const motopod = buildMotopod();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -49,11 +52,17 @@ const byName = (n) => tank.getObjectByName(n);
  * pipeline to export it. Any invariant a new subject breaks is a real incompatibility rather
  * than a stylistic difference.
  *
- * `wheels` is a flag rather than an assumption because the MK-CX broke the original version of
- * this list, which required `Wheels_Instanced` of everything. It hovers; it has no wheels. The
- * choice was to make the contract conditional or to bolt decorative running gear onto a
- * hovering vehicle so a checklist stayed green — and a contract that forces geometry to exist
- * for the test's benefit has stopped describing the thing it tests.
+ * `instancedGear` is a flag rather than an assumption because the MK-CX broke the original
+ * version of this list, which required `Wheels_Instanced` of everything. It hovers; it has no
+ * wheels. The choice was to make the contract conditional or to bolt decorative running gear
+ * onto a hovering vehicle so a checklist stayed green — and a contract that forces geometry to
+ * exist for the test's benefit has stopped describing the thing it tests.
+ *
+ * It was called `wheels` until the MotoPod, which made the name undeniably wrong: that subject
+ * is mostly wheels and instances none of them, because each of its four rotating rings carries
+ * a different articulated transform and instance matrices cannot inherit a parent's. The flag
+ * had never meant "has wheels" — the walker set it false with eight legs and the exoframe with
+ * two — it meant "the running gear is one InstancedMesh". Now it says so.
  *
  * `armed` is the same shape of flag, added by BP-Headless01 — an unarmed exoframe with hands
  * instead of a gun. Worth noting what it cost, because it was almost nothing: unlike wheels,
@@ -64,13 +73,13 @@ const byName = (n) => tank.getObjectByName(n);
  */
 const MODELS = [
   {
-    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision', wheels: true, armed: true,
+    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision', instancedGear: true, armed: true,
     required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Turret_Pivot', 'Barrel_Pivot'],
   },
   {
-    name: 'mkcx', root: mkcx, rootName: 'MKCX_Root', collision: 'Hull_Collision', wheels: false, armed: true,
+    name: 'mkcx', root: mkcx, rootName: 'MKCX_Root', collision: 'Hull_Collision', instancedGear: false, armed: true,
     required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Details_Group', 'Hover_Gear',
                'Nacelle_L', 'Nacelle_R', 'Secondary_Turrets',
@@ -81,7 +90,7 @@ const MODELS = [
              'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
   },
   {
-    name: 'heptat', root: heptat, rootName: 'HeptaT_Root', collision: 'Chassis_Collision', wheels: true, armed: true,
+    name: 'heptat', root: heptat, rootName: 'HeptaT_Root', collision: 'Chassis_Collision', instancedGear: true, armed: true,
     required: ['Chassis_Mesh', 'Chassis_Collision', 'Cab_Mesh', 'CargoBay_Mesh',
                'Ramp_Pivot', 'Ramp_Mesh', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
@@ -91,7 +100,7 @@ const MODELS = [
     // A walker: no wheels, and its ride height is leg state rather than a dimension. The
     // required list therefore names the leg chain, because "the legs exist and are articulated"
     // is this subject's equivalent of "the running gear is instanced".
-    name: 'heptapod', root: heptapod, rootName: 'Heptapod_Root', collision: 'Hull_Collision', wheels: false, armed: true,
+    name: 'heptapod', root: heptapod, rootName: 'Heptapod_Root', collision: 'Hull_Collision', instancedGear: false, armed: true,
     required: ['Body_Group', 'Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Details_Group', 'Reactor_Mesh',
                'Sensor_Suite_Mesh', 'Lidar_Array', 'Leg_1L_Mount', 'Leg_4R_Tibia',
@@ -104,7 +113,7 @@ const MODELS = [
     // reason the walker's does, and the hands because five driven digits a side are the machine's
     // whole purpose — a frame that lost its fingers in a refactor is not this subject any more.
     name: 'headless', root: headless, rootName: 'Headless_Root', collision: 'Torso_Collision',
-    wheels: false, armed: false,
+    instancedGear: false, armed: false,
     required: ['Body_Group', 'Thorax_Mesh', 'Torso_Collision', 'Pelvis_Mesh', 'Details_Group',
                'Waist_Yaw', 'Waist_Pitch', 'Chest_Hex', 'Core_Lens', 'Sensor_Band',
                'Leg_L_Mount', 'Leg_R_Ankle', 'Foot_L_Sole', 'Foot_R_Sole',
@@ -113,7 +122,21 @@ const MODELS = [
              'Shoulder_R_Pivot', 'Elbow_L_Pivot', 'Finger_L1_Prox', 'Thumb_R_Prox'],
   },
   {
-    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', wheels: true, armed: true,
+    // A two-wheeler. Nothing is instanced (each rotating ring is on a different articulated
+    // parent) and nothing is armed, so both flags are false on a vehicle that is mostly wheel.
+    // The required list names the ride/lean chain, because "it stands up" is this subject's
+    // equivalent of "the running gear is instanced".
+    name: 'motopod', root: motopod, rootName: 'MotoPod_Root', collision: 'Chassis_Collision',
+    instancedGear: false, armed: false,
+    required: ['Ride_Height', 'Lean_Pivot', 'Chassis_Group', 'Fairing_Mesh', 'Chassis_Collision',
+               'Details_Group', 'Canopy_Pivot', 'Canopy_Mesh', 'HUD_Panel', 'Steer_Pivot',
+               'Wheel_F_Spin', 'Wheel_R_Spin', 'Wheel_F_Fixed', 'Tyre_F', 'Tyre_R',
+               'Stator_F', 'Rotor_R', 'Motor_F', 'Thruster_Pivot', 'Thruster_Nozzle'],
+    pivots: ['Ride_Height', 'Lean_Pivot', 'Steer_Pivot', 'Canopy_Pivot',
+             'Wheel_F_Spin', 'Wheel_R_Spin', 'Thruster_Pivot'],
+  },
+  {
+    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', instancedGear: true, armed: true,
     required: ['Chassis_Mesh', 'Chassis_Collision', 'Traverse_Pivot', 'TopCarriage_Mesh',
                'Elevation_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Traverse_Pivot', 'Elevation_Pivot', 'Trail_Front_L', 'Trail_Rear_R'],
@@ -206,7 +229,7 @@ for (const m of MODELS) {
 
   test(`[${m.name}] running gear matches what the subject claims`, () => {
     const w = m.root.getObjectByName('Wheels_Instanced');
-    if (m.wheels) {
+    if (m.instancedGear) {
       assert.ok(w?.isInstancedMesh, 'Wheels_Instanced must be an InstancedMesh');
       const loose = [];
       m.root.traverse((o) => {
@@ -220,7 +243,8 @@ for (const m of MODELS) {
       m.root.traverse((o) => {
         if (/RoadWheel|Sprocket|ReturnRoller|^Track_|Wheels_Instanced/i.test(o.name)) leftovers.push(o.name);
       });
-      assert.deepEqual(leftovers, [], 'this subject declares no wheels but still carries some');
+      assert.deepEqual(leftovers, [],
+        'this subject declares no instanced running gear but still carries some');
     }
   });
 
@@ -711,6 +735,162 @@ test('[headless] the sensor band is lit — it is the only thing on the machine 
   assert.deepEqual([...channels].sort(), [1, 2], 'expected parts on both accent channels');
 });
 
+console.log('\nthe two-wheeler — it leans, and the road is the roll axis');
+
+/** Lowest world Y over the actual vertices of the meshes a filter selects. */
+function lowestVertex(root, filter = () => true) {
+  const v = new THREE.Vector3();
+  let lo = Infinity, name = '';
+  root.updateMatrixWorld(true);
+  root.traverse((o) => {
+    if (!o.isMesh || o.userData.isCollision || !filter(o)) return;
+    const pos = o.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+      if (v.y < lo) { lo = v.y; name = o.name; }
+    }
+  });
+  return { lo, name };
+}
+
+test('[motopod] both tyres are on the road at every lean angle', () => {
+  /**
+   * The one a two-wheeler must not get wrong, and the reason it needs `afterArticulate`.
+   *
+   * Rolling about the ground contact line gets it most of the way, but a crowned tyre's
+   * contact point migrates around the crown as it banks, so the axle has to sit
+   * `crown*(1 - cos t)` higher than a rigid roll leaves it. That is 20 mm at full lean —
+   * invisible in a still, and a wheel sunk 20 mm into the tarmac the moment anything casts a
+   * shadow.
+   */
+  for (const angle of [-MPDIM.lean, -20, -7, 0, 7, 20, MPDIM.lean]) {
+    setJoint(motopod, 'lean', angle, updateMotopodRide);
+    const { lo } = lowestVertex(motopod, (o) => /^Tyre_/.test(o.name));
+    assert.ok(Math.abs(lo) < 0.002,
+      `lean ${angle}: the tyres sit at y=${lo.toFixed(4)}, not on the road`);
+  }
+  setJoint(motopod, 'lean', 0, updateMotopodRide);
+});
+
+test('[motopod] nothing but the tyres reaches the road at full lean', () => {
+  // The lean limit is a clearance figure, not a styling choice: past it the bodywork touches
+  // down before the tyre's shoulder does, and a schematic that lets you scrape the fairing is
+  // drawing a crash rather than a corner.
+  for (const angle of [-MPDIM.lean, MPDIM.lean]) {
+    setJoint(motopod, 'lean', angle, updateMotopodRide);
+    const { lo, name } = lowestVertex(motopod, (o) => !/^Tyre_/.test(o.name));
+    assert.ok(lo > 0.02,
+      `lean ${angle}: ${name} is ${(lo * 1000).toFixed(0)} mm off the road — the lean limit is too generous`);
+  }
+  setJoint(motopod, 'lean', 0, updateMotopodRide);
+});
+
+test('[motopod] the ride lift is zero upright and grows with lean', () => {
+  // Guards the direction as well as the magnitude. A sign error here reads as a machine that
+  // sinks further the harder it banks, which the contact test above would also catch — but
+  // this one says why.
+  assert.equal(rideLift(0), 0, 'upright, the machine must sit where it was authored');
+  const steps = [0, 10, 20, MPDIM.lean].map(rideLift);
+  for (let i = 1; i < steps.length; i++) {
+    assert.ok(steps[i] > steps[i - 1], 'the lift must increase with lean');
+  }
+  assert.ok(steps.at(-1) < 0.05, 'a lift this large means the crown radius is wrong');
+});
+
+test('[motopod] the tread is crowned, which is what makes the lean mean anything', () => {
+  // A flat tread leaned over stands on its shoulder edge — further from the axle than the
+  // tread is — so the machine would climb as it banked and the contact patch would be a
+  // corner. `trackBand` makes flat bands and a track never leans; this is why the tyre is the
+  // one ring on the machine that is not one.
+  const { width, crown } = MPDIM.wheel.tyre;
+  assert.ok(crown >= width / 2, 'the crown arc is too tight to span the tread');
+  assert.ok(treadRadius(0) === MPDIM.wheel.radius, 'the crown must be tangent on the centreline');
+  assert.ok(treadRadius(width / 2) < MPDIM.wheel.radius - 0.005,
+    'the shoulder is level with the centreline — the tread is effectively flat');
+});
+
+test('[motopod] the wheels are hubless — there is a clear bore through each', () => {
+  // The reference sheet's whole read, and the thing a stray inner ring would silently fill in.
+  // Measured off the built vertices rather than off the radius table, because the table is
+  // what a mistake would be consistent with.
+  motopod.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  for (const tag of ['F', 'R']) {
+    const mount = motopod.getObjectByName(`Wheel_${tag}_Mount`);
+    const centre = mount.getWorldPosition(new THREE.Vector3());
+    let closest = Infinity;
+    mount.traverse((o) => {
+      if (!o.isMesh) return;
+      const pos = o.geometry.getAttribute('position');
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).sub(centre);
+        // Distance from the axle line, which runs along X.
+        closest = Math.min(closest, Math.hypot(v.y, v.z));
+      }
+    });
+    assert.ok(closest > MPDIM.wheel.bore - 0.002,
+      `wheel ${tag}: something sits ${closest.toFixed(3)} m from the axle line, inside the bore`);
+    assert.ok(closest * 2 > 0.28, `wheel ${tag}: the bore is too small to read as hubless`);
+  }
+});
+
+test('[motopod] spinning a wheel turns the rim and leaves the stator alone', () => {
+  // On a hubless wheel the arms grip the stator, so which rings turn is mechanism, not
+  // labelling. Putting all five on the spin pivot renders identically at rest and is wrong the
+  // moment anything moves.
+  const sample = (name) => {
+    const o = motopod.getObjectByName(name);
+    return o.matrixWorld.elements.slice(0, 12).map((n) => Number(n.toFixed(6))).join(',');
+  };
+  const watched = ['Tyre_F', 'Rotor_F', 'Motor_F', 'Stator_F', 'Sensor_F'];
+  setJoint(motopod, 'roll', 0);
+  const before = Object.fromEntries(watched.map((n) => [n, sample(n)]));
+  setJoint(motopod, 'roll', 90);
+  for (const name of ['Tyre_F', 'Rotor_F', 'Motor_F']) {
+    assert.notEqual(sample(name), before[name], `${name} should turn with the rim`);
+  }
+  for (const name of ['Stator_F', 'Sensor_F']) {
+    assert.equal(sample(name), before[name], `${name} is a fixed ring and must not turn`);
+  }
+  setJoint(motopod, 'roll', 0);
+});
+
+test('[motopod] the graph is the size the reference sheet dimensions', () => {
+  // The sheet carries three figures. They are derived here — length off the tyre and the
+  // nozzle, height off the canopy profile AFTER the extrusion taper, width off the fairing's
+  // caps — and this is what stops the title block drifting from the machine.
+  setJoint(motopod, 'lean', 0, updateMotopodRide);
+  setJoint(motopod, 'steer', 0);
+  setJoint(motopod, 'canopy', 0);
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  motopod.traverse((o) => {
+    if (!o.isMesh || o.userData.isCollision) return;
+    const pos = o.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) box.expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld));
+  });
+  const got = { length: box.max.z - box.min.z, height: box.max.y, width: box.max.x - box.min.x };
+  for (const [key, derived] of [['length', overallLength()], ['height', overallHeight()], ['width', overallWidth()]]) {
+    assert.ok(Math.abs(got[key] - derived) < 0.01,
+      `${key}: the helpers say ${derived.toFixed(3)}, the graph is ${got[key].toFixed(3)}`);
+    assert.ok(Math.abs(derived - MPDIM.quoted[key]) < 0.01,
+      `${key}: the sheet dimensions ${MPDIM.quoted[key]}, the machine is ${derived.toFixed(3)}`);
+  }
+});
+
+test('[motopod] the roll axis is the road, not the body centreline', () => {
+  // Roll a vehicle about its own middle and the tyres go through the tarmac. The lean pivot
+  // has to sit on the ground line, which means its own origin carries no height at all — the
+  // ride lift lives on the node ABOVE it, so the correction is a lift along world Y rather
+  // than along the leaned Y.
+  const lean = motopod.getObjectByName('Lean_Pivot');
+  const ride = motopod.getObjectByName('Ride_Height');
+  assert.equal(lean.parent.name, 'Ride_Height', 'the lift must sit above the lean, not below it');
+  assert.equal(lean.position.length(), 0, 'the lean pivot must be on the ground contact line');
+  assert.equal(ride.position.x, 0);
+  assert.equal(ride.position.z, 0);
+});
+
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
@@ -753,7 +933,7 @@ console.log('\nasset / display boundary');
 
 test('asset code never imports from display code', () => {
   const offenders = [];
-  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'howitzer'].map((d) => join(ROOT, 'src', d));
+  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'howitzer'].map((d) => join(ROOT, 'src', d));
   for (const file of assetDirs.flatMap(walk)) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
@@ -784,7 +964,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="f8b740ae">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="9fb11204">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

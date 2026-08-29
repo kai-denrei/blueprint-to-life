@@ -3,10 +3,10 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Six subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the **Hepta-T**
-6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01** (a headless
-bipedal exoframe), and an M777-pattern 155 mm towed howitzer — plus a primitives rig for
-debugging the shader.
+Seven subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
+**Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
+(a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, and an M777-pattern
+155 mm towed howitzer — plus a primitives rig for debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -32,6 +32,9 @@ npm start             # http://127.0.0.1:5173/
 - `/?subject=headless` — BP-Headless01, a headless powered exoframe: no head and no weapon at
   all, a hunched carapace whose only aperture is a lit sensor band on the chest, two legs whose
   fold sets the ride height, and five driven digits on each hand
+- `/?subject=motopod` — Moto // Pod (R-POD), a two-wheel monocycle: hubless wheels with five
+  concentric rings apiece, a canopy on a hinge, a vectoring thruster, and a lean that rolls
+  about the road rather than about the machine
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -87,6 +90,7 @@ src/mkcx/       asset: MK-CX
 src/heptat/     asset: Hepta-T
 src/heptapod/   asset: Heptapod Walker
 src/headless/   asset: BP-Headless01
+src/motopod/    asset: Moto // Pod
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -97,7 +101,7 @@ server/serve.js static server with the cache-control split the busting layer nee
 ```
 
 Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/headless`,
-`src/howitzer`) must not import from display code, and
+`src/motopod`, `src/howitzer`) must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -384,6 +388,71 @@ centimetre of the quoted figure *and* that the mesh it belongs to is the carapac
 clause is what forced the loom, the spine cover and the dorsal conduits down under the shell
 instead of letting a hose quietly become the tallest thing on the machine.
 
+### What the two-wheeler cost
+
+The Moto // Pod is a hubless monocycle, and it is the first subject that cannot stand up on its
+own. Two asset files, one descriptor, one registry line, one shared generator — and the useful
+result is again mostly what it did *not* need.
+
+**Hubless wheels were free.** Four of the five concentric rings on each wheel — mag-lev stator,
+hubless motor, gyro sensor, mag-lev rotor — are `trackBand` with a single circle in the list.
+That generator was written to trace the taut band around a tank's running gear via the support
+function of a union of disks; a union of *one* disk is a circle, and the band around it is a
+ring. The tank's track generator turned out to have been "a band around a set of disks" all
+along, and nobody had to notice that until a vehicle wanted rings.
+
+**The tyre was not free, and the reason is mechanical.** A flat-treaded tyre leaned over stands
+on its shoulder edge, which is `sqrt(r² + (w/2)²) − r` further from the axle than the tread is:
+the machine would climb as it banked and the contact patch would be a corner. So the tyre — and
+only the tyre — is a new generator, `crownedTyre`, whose tread follows a circular arc across the
+width. `trackBand` stays flat, because a track never leans.
+
+**Leaning is a ground-contact problem, not a rotation.** Roll a vehicle about its own centreline
+and the tyres go through the tarmac, so LEAN drives a pivot on the ground contact line. That
+gets it most of the way and is still wrong, by an amount worth writing down: with a crowned
+tread the contact point migrates round the crown to `u = −crown·sin t`, and working the lowest
+point out from there, the axle has to sit at `radius·cos t + crown·(1 − cos t)`. A rigid roll
+leaves it at `radius·cos t`, so the machine sinks by `crown·(1 − cos t)` — 20 mm at the 34°
+lean limit. That correction is `afterArticulate`, and it has to hang on a node *above* the lean
+pivot: it is a lift along world Y, and a child of the lean node would lift along the leaned Y
+and be wrong by `cos t` at exactly the angles that matter.
+
+That makes three subjects in a row using `afterArticulate`, and this one is the first whose
+reason has nothing to do with legs. The walker's hull height and the exoframe's both fell out of
+a limb solve; this one falls out of the shape of a tyre. What the hook actually generalises to
+is *any vehicle whose ground contact moves as it articulates*, and a tree of rotations cannot
+express that in any of the three cases.
+
+**The steering has no rake and no trail**, which is a design decision the reference sheet
+licenses rather than an omission: it declares DYNAMIC GYRO + AI ASSIST, so nothing on the
+machine relies on caster stability. The geometric payoff is that a vertical steering axis
+through the axle keeps the front contact patch directly underneath it. A raked axis drags that
+patch sideways as the bar moves, and a schematic drawn at full lock would show a wheel hovering.
+
+#### What is deliberately not corrected
+
+Lean and steer interact. With both at their limits the front wheel's effective tilt is
+`asin(cos ψ · sin θ)` rather than `θ`, so the contact solve above is off by ~24 mm at full lean
+*and* full lock. Fixing it needs the machine to pitch about the rear contact — a third derived
+degree of freedom, about 0.8° — and it is left out on purpose. Every elevation on the sheet is
+dimensioned at zero lean and zero steer, where the solve is exact, and a drawing that quotes a
+pitch angle it invented is worse than one that does not. The contact invariant therefore sweeps
+the full lean range at zero steer, which is the claim actually being made.
+
+#### Two things the invariants caught
+
+The width figure is derived from the sponsons, which are the widest part of the machine, and
+the check that the graph matches it failed the moment the magnetic access hatch was placed 5 mm
+proud of them. That is the entire job of a derived title block: the drawing said 0.86 m and the
+object had quietly become 0.87 m.
+
+The bodywork also started as one extrusion with `frontScale`/`backScale` set to taper it, which
+does not do that. Equal cap scales shrink the whole ZY profile about its centroid and extrude it
+straight — so the fairing was a half-size prism floating inside a full-width box. The howitzer's
+trail arms had already hit this and left a note; the fix here is the same one, which is not to
+use cap scaling for shape. The body is four narrow extrusions stacked at different heights
+instead, and the ovoid front elevation comes from the sponsons standing proud of the fairing.
+
 #### One change in display code
 
 `main.js` used to find the collision proxy with
@@ -438,11 +507,16 @@ is one line in `MODELS`, and anything it breaks is a real incompatibility.
 These assert the properties the spec calls the deliverable, not pixels. A screenshot test would
 assert the display mode, which is explicitly not the asset.
 
-Two flags keep the shared list honest about what a subject actually is: `wheels` (added by the
-MK-CX, which hovers) and `armed` (added by BP-Headless01, which has hands instead of a gun).
-Both check the negative case as well as the positive one — a subject that declares no running
-gear must carry none, and a subject that declares no armament must not still be carrying a
-breech.
+Two flags keep the shared list honest about what a subject actually is: `instancedGear` (added
+by the MK-CX, which hovers) and `armed` (added by BP-Headless01, which has hands instead of a
+gun). Both check the negative case as well as the positive one — a subject that declares no
+instanced running gear must carry no orphaned road wheels, and a subject that declares no
+armament must not still be carrying a breech.
+
+The first flag was called `wheels` until the Moto // Pod, which made the name undeniably wrong:
+that subject is *mostly* wheels and instances none of them. It had never meant "has wheels" —
+the walker set it false with eight legs — it meant "the running gear is one InstancedMesh". Now
+it says so.
 
 For anything needing a live WebGL context there is a headless harness that drives Chrome over
 CDP using nothing but Node's built-in WebSocket:
