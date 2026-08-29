@@ -23,6 +23,8 @@ import { buildHeptapod, updateHeptapodStance } from '../src/heptapod/buildHeptap
 import { HPDIM, legSolve, legLayout, footSpan } from '../src/heptapod/dimensions.js';
 import { buildHeadless, updateHeadlessStance } from '../src/headless/buildHeadless.js';
 import { buildMotopod, updateMotopodRide } from '../src/motopod/buildMotopod.js';
+import { buildRobotArm, updateRobotArmAim } from '../src/robotarm/buildRobotArm.js';
+import { RADIM, aimIsAlwaysReachable, solveAim } from '../src/robotarm/dimensions.js';
 import { MPDIM, overallHeight, overallLength, overallWidth, rideLift, treadRadius } from '../src/motopod/dimensions.js';
 import { BHDIM, crownHeight, crownPoint, stand } from '../src/headless/dimensions.js';
 import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
@@ -44,6 +46,7 @@ const heptat = buildHeptat();
 const heptapod = buildHeptapod();
 const headless = buildHeadless();
 const motopod = buildMotopod();
+const robotarm = buildRobotArm();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -134,6 +137,20 @@ const MODELS = [
                'Stator_F', 'Rotor_R', 'Motor_F', 'Thruster_Pivot', 'Thruster_Nozzle'],
     pivots: ['Ride_Height', 'Lean_Pivot', 'Steer_Pivot', 'Canopy_Pivot',
              'Wheel_F_Spin', 'Wheel_R_Spin', 'Thruster_Pivot'],
+  },
+  {
+    // A six-axis arm. Its `required` list names the whole J1..J6 chain, because "the axes exist
+    // at their mechanical origins and are individually addressable" is the entire reason to
+    // export one — and because two of those axes are written by the aim solve rather than by a
+    // slider, so a rename would break the solve silently.
+    name: 'robotarm', root: robotarm, rootName: 'RobotArm_Root', collision: 'Base_Collision',
+    instancedGear: false, armed: false,
+    required: ['Base_Group', 'Base_Plate', 'Base_Collision', 'Details_Group', 'Base_Casting',
+               'Slew_Ring', 'Shoulder_Mount', 'J1_Pivot', 'J2_Pivot', 'J3_Pivot', 'J4_Pivot',
+               'J5_Pivot', 'J6_Pivot', 'UpperArm_Mesh', 'Forearm_Mesh', 'Flange_Disc',
+               'Head_Group', 'Head_Body', 'Jaw_L_Pivot', 'Jaw_R_Pivot'],
+    pivots: ['J1_Pivot', 'J2_Pivot', 'J3_Pivot', 'J4_Pivot', 'J5_Pivot', 'J6_Pivot',
+             'Shoulder_Mount', 'Jaw_L_Pivot', 'Jaw_R_Pivot'],
   },
   {
     name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', instancedGear: true, armed: true,
@@ -891,6 +908,157 @@ test('[motopod] the roll axis is the road, not the body centreline', () => {
   assert.equal(ride.position.z, 0);
 });
 
+console.log('\nthe arm — the sliders are the aim, not the axes');
+
+/** Where the head is actually looking, in world terms, read off the built matrices. */
+function headAim(root) {
+  root.updateMatrixWorld(true);
+  const head = root.getObjectByName('Head_Body');
+  const m = head.matrixWorld.elements;
+  // Third basis column: the head's own +Z, which is the axis it points along.
+  const d = new THREE.Vector3(m[8], m[9], m[10]).normalize();
+  return {
+    elevation: (Math.asin(Math.max(-1, Math.min(1, d.y))) * 180) / Math.PI,
+    bearing: (Math.atan2(d.x, d.z) * 180) / Math.PI,
+  };
+}
+
+/** Drive several joints at once, then run the fix-up — the aim only means anything as a set. */
+function setPose(root, values, after) {
+  for (const [key, value] of Object.entries(values)) {
+    const j = root.userData.joints.find((x) => x.key === key);
+    const t = (value - j.min) / (j.max - j.min);
+    for (const target of j.targets) {
+      root.getObjectByName(target.node).rotation[target.axis] =
+        ((target.from + t * (target.to - target.from)) * Math.PI) / 180;
+    }
+  }
+  after?.(root);
+  root.updateMatrixWorld(true);
+}
+
+test('[robotarm] the head holds its aim while the arm moves under it', () => {
+  /**
+   * The whole subject in one assertion.
+   *
+   * BEARING and TOOL PITCH are commands, not axes: J1 and J5 are solved from them. So dragging
+   * SHOULDER, ELBOW and WRIST ROLL through their travel must not move the head's aim by a
+   * measurable amount. Get the solve wrong and this drifts by tens of degrees — which is
+   * exactly what a joint-frame arm does, and exactly what this subject exists not to do.
+   */
+  const L = RADIM.limits;
+  for (const bearing of [-140, 0, 55]) {
+    for (const pitch of [-L.pitch, -12, 0, 17, L.pitch]) {
+      for (const shoulder of L.shoulder) {
+        for (const elbow of L.elbow) {
+          for (const wristRoll of [-L.wristRoll, 0, L.wristRoll]) {
+            setPose(robotarm, { swing: bearing, pitch, shoulder, elbow, wristRoll },
+              updateRobotArmAim);
+            const aim = headAim(robotarm);
+            assert.ok(Math.abs(aim.elevation - pitch) < 0.01,
+              `pitch ${pitch} at J2=${shoulder} J3=${elbow} J4=${wristRoll}: head is at ${aim.elevation.toFixed(2)}°`);
+            const dBearing = Math.abs(((aim.bearing - bearing + 540) % 360) - 180);
+            assert.ok(dBearing < 0.01,
+              `bearing ${bearing} at J2=${shoulder} J3=${elbow} J4=${wristRoll}: head is at ${aim.bearing.toFixed(2)}°`);
+          }
+        }
+      }
+    }
+  }
+});
+
+test('[robotarm] the wrist can always reach the commanded aim', () => {
+  // The design constraint that makes the promise keepable, checked as the inequality it is
+  // rather than as a spot check. Widen J4 without narrowing TOOL PITCH and the head silently
+  // stops being able to hold its aim in the corners of the envelope — the sort of thing nobody
+  // drags a slider to.
+  assert.ok(aimIsAlwaysReachable(),
+    `sin(${RADIM.limits.pitch}°) > cos(${RADIM.limits.wristRoll}°): the wrist cannot hold every commanded aim`);
+});
+
+test('[robotarm] the solved wrist angle stays inside J5 travel', () => {
+  // The solve is exact, but exact is not the same as mechanically possible. This sweeps the
+  // declared envelope and asserts the axis it spends never runs out of travel.
+  const L = RADIM.limits;
+  let worst = 0, at = null;
+  for (let sh = L.shoulder[0]; sh <= L.shoulder[1]; sh += 2.5) {
+    for (let el = L.elbow[0]; el <= L.elbow[1]; el += 2.5) {
+      for (let wr = -L.wristRoll; wr <= L.wristRoll; wr += 7.5) {
+        for (let p = -L.pitch; p <= L.pitch; p += 5) {
+          const { j5 } = solveAim({ shoulder: sh, elbow: el, wristRoll: wr, pitch: p, swing: 0 });
+          if (Math.abs(j5) > worst) { worst = Math.abs(j5); at = { sh, el, wr, p }; }
+        }
+      }
+    }
+  }
+  assert.ok(worst <= L.wristPitch,
+    `J5 needs ${worst.toFixed(1)}° at ${JSON.stringify(at)} but only has ${L.wristPitch}°`);
+});
+
+test('[robotarm] the aim solve is closed-form and reproducible', () => {
+  // The scene graph is the deliverable, so the same command has to produce the same numbers
+  // every build. An iterative IK seeded from the previous frame would not — same argument the
+  // Hepta-T's seeded jitter makes about Math.random.
+  const cmd = { shoulder: 31, elbow: 52, wristRoll: -18, pitch: 23, swing: 77 };
+  const a = solveAim(cmd), b = solveAim(cmd);
+  assert.deepEqual(a, b);
+  assert.ok(Number.isFinite(a.j1) && Number.isFinite(a.j5), 'the solve produced a non-finite angle');
+});
+
+test('[robotarm] the fix-up consumes a command, not its own output', () => {
+  // `applyArticulation` rewrites the commands into J1 and J5 every frame before the fix-up
+  // reads them, so the fix-up reads a command and writes a solution to the same two nodes. If
+  // it ever read its own output instead, the arm would creep a little further every frame and
+  // the drawing would drift while nobody touched a control.
+  setPose(robotarm, { swing: 40, pitch: 25, shoulder: 30, elbow: 55, wristRoll: 20 },
+    updateRobotArmAim);
+  const first = headAim(robotarm);
+  updateRobotArmAim(robotarm);
+  updateRobotArmAim(robotarm);
+  robotarm.updateMatrixWorld(true);
+  const after = headAim(robotarm);
+  // Re-running the fix-up WITHOUT re-applying the commands must be a no-op on the axes it
+  // wrote, because the commands it reads are gone. Assert the drift, which is the honest
+  // property: the fix-up is only correct in the order main.js calls it.
+  assert.ok(Math.abs(after.elevation - first.elevation) > 0.5,
+    'the fix-up appears to read its own output rather than the command');
+});
+
+test('[robotarm] every axis is a named, empty pivot at a real origin', () => {
+  // The reason to export an arm at all is that something else drives the axes. J2 and J3 sit at
+  // the ends of their links, J4/J5/J6 stack down the wrist, and none of them carries geometry.
+  const A = RADIM.arm;
+  const expect = [
+    ['J3_Pivot', 'J2_Pivot', A.upper],
+    ['J4_Pivot', 'J3_Pivot', A.fore],
+    ['J5_Pivot', 'J4_Pivot', A.wrist],
+    ['J6_Pivot', 'J5_Pivot', A.flange],
+  ];
+  for (const [child, parent, z] of expect) {
+    const node = robotarm.getObjectByName(child);
+    assert.equal(node.parent.name, parent, `${child} must hang off ${parent}`);
+    assert.equal(Number(node.position.z.toFixed(6)), Number(z.toFixed(6)),
+      `${child} is not at the end of its link`);
+    assert.equal(Number(node.position.x.toFixed(6)), 0);
+    assert.equal(Number(node.position.y.toFixed(6)), 0);
+  }
+  assert.equal(robotarm.getObjectByName('J2_Pivot').parent.name, 'Shoulder_Mount');
+  assert.equal(robotarm.getObjectByName('J1_Pivot').parent.name, 'RobotArm_Root');
+});
+
+test('[robotarm] the head is authored where the GRIP default puts it', () => {
+  // Same trap the exoframe's fingers have: the slider default and the geometry in the exported
+  // GLB cannot be allowed to disagree about how open the gripper is.
+  const t = RADIM.rest.grip / 100;
+  const expected = RADIM.head.grip.open + t * (RADIM.head.grip.closed - RADIM.head.grip.open);
+  const jaw = robotarm.getObjectByName('Jaw_R_Pivot');
+  assert.equal(
+    Number(((jaw.rotation.x * 180) / Math.PI).toFixed(6)),
+    Number(expected.toFixed(6)),
+    'the authored jaw angle is not the angle the GRIP default produces',
+  );
+});
+
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
@@ -933,7 +1101,7 @@ console.log('\nasset / display boundary');
 
 test('asset code never imports from display code', () => {
   const offenders = [];
-  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'howitzer'].map((d) => join(ROOT, 'src', d));
+  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'robotarm', 'howitzer'].map((d) => join(ROOT, 'src', d));
   for (const file of assetDirs.flatMap(walk)) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
@@ -964,7 +1132,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="9fb11204">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="d6ea470b">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

@@ -3,10 +3,11 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Seven subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
+Eight subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
 **Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
-(a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, and an M777-pattern
-155 mm towed howitzer — plus a primitives rig for debugging the shader.
+(a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, the **RA-6** six-axis
+robot arm, and an M777-pattern 155 mm towed howitzer — plus a primitives rig for debugging the
+shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -35,6 +36,9 @@ npm start             # http://127.0.0.1:5173/
 - `/?subject=motopod` — Moto // Pod (R-POD), a two-wheel monocycle: hubless wheels with five
   concentric rings apiece, a canopy on a hinge, a vectoring thruster, and a lean that rolls
   about the road rather than about the machine
+- `/?subject=robotarm` — RA-6, a six-axis industrial arm whose sliders are the head's aim
+  rather than its axes: set a bearing and an elevation, then move the arm underneath and the
+  head keeps pointing where it was told
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -91,6 +95,7 @@ src/heptat/     asset: Hepta-T
 src/heptapod/   asset: Heptapod Walker
 src/headless/   asset: BP-Headless01
 src/motopod/    asset: Moto // Pod
+src/robotarm/   asset: RA-6 articulated arm
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -101,7 +106,7 @@ server/serve.js static server with the cache-control split the busting layer nee
 ```
 
 Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/headless`,
-`src/motopod`, `src/howitzer`) must not import from display code, and
+`src/motopod`, `src/robotarm`, `src/howitzer`) must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -452,6 +457,79 @@ straight — so the fairing was a half-size prism floating inside a full-width b
 trail arms had already hit this and left a note; the fix here is the same one, which is not to
 use cap scaling for shape. The body is four narrow extrusions stacked at different heights
 instead, and the ovoid front elevation comes from the sponsons standing proud of the fairing.
+
+### What the arm changed: the sliders stopped being the axes
+
+Every subject before the RA-6 exposed its mechanism directly. A slider was a joint, a joint was
+a rotation, and the number on screen was the number in the graph. That is the right default —
+it is exactly what lets the viewer drive a machine it has never heard of — and for an arm it is
+the wrong control. Nobody points a tool by reasoning about J1 through J6.
+
+So on this subject **BEARING and TOOL PITCH are the head's aim, in world terms, and J1 and J5
+are solved from them.** Drag SHOULDER, ELBOW and WRIST ROLL through their entire travel and the
+head keeps aiming exactly where it was told to; the wrist absorbs the posture change. There is
+an invariant that sweeps 180 combinations of the five controls and requires the head's measured
+world direction to match the command to within 0.01°.
+
+Three things made that fit the existing contract instead of breaking it.
+
+**The commands ride on the axes they dominate.** BEARING's declared target is `J1_Pivot.y` and
+TOOL PITCH's is `J5_Pivot.x`. A viewer that never calls `afterArticulate` therefore still gets a
+working arm — just a joint-frame one, where the aim drifts as the arm moves. Degraded, not
+broken: the same graceful fallback as a renderer that ignores the `emissive` attribute and draws
+the part normally. Nothing in `src/render/`, `src/camera/` or `src/chrome/` knows this subject
+is different from the tank.
+
+**The solve is closed-form.** The tool axis in the J1 frame works out to a single sinusoid in
+J5 — `sin(elevation) = cos(s)·cos(j5) − cos(j4)·sin(s)·sin(j5)` where `s = J2 + J3` — so it
+inverts by writing it as `R·cos(j5 − δ)` and reading J5 straight off. No iteration, no solver
+state, and the same numbers every build. An iterative IK seeded from the previous frame would
+have made the scene graph non-reproducible, which is the same argument the Hepta-T's seeded
+jitter makes about `Math.random`.
+
+**The bearing falls out of the same vector.** With the wrist rolled, the aim leaves the arm's
+own plane and J1 stops being the direction the head is looking. The solve takes the tool
+vector's azimuth in the J1 frame and subtracts it, so BEARING means "where the head is looking"
+rather than "where the arm is pointing" — which are not the same thing, and only one of them is
+useful.
+
+That is the fourth subject to use `afterArticulate` and the first to use it for something other
+than ground contact. The walker's hull height, the exoframe's and the pod's ride lift were all
+*where does this machine sit*; this is *which way is it looking*. What the hook has turned out
+to be is the place where a fact a tree of rotations cannot carry gets computed — and an inverse
+relationship between a command and two axes is that kind of fact.
+
+#### The envelope is a design constraint, not a clamp
+
+An arm has poses it cannot reach, and a schematic that silently fudges one is worse than a
+schematic that cannot make the promise. The reachable elevation is bounded by
+`R = sqrt(1 − sin²(s)·sin²(J4))`, whose worst case over the arm's travel is `cos(J4max)`. So the
+commanded pitch is reachable everywhere if and only if
+
+```
+sin(pitchMax) <= cos(wristRollMax)
+```
+
+which is why ±40° of tool pitch and ±45° of wrist roll are a *pair* in the limits table rather
+than two independent tastes. Widen the wrist roll without narrowing the pitch and the head
+stops being able to hold its aim — silently, in the corners of the envelope nobody drags a
+slider to. There is an invariant on the inequality itself, and a second that sweeps the envelope
+and asserts the solved J5 never exceeds its declared travel (it peaks at 123° of 130°).
+
+#### Two smaller things it turned up
+
+The `armed: false` check is a heuristic over node names, and it flagged this machine as armed:
+the J1 casting had been called `Turret_Mesh`, borrowed from the tank subjects. The right
+response to a false positive on an ambiguous name is a better name — an industrial arm has a
+base casting — not a weaker check.
+
+The instrumentation and the controls were two independent absolute boxes in the same corner, so
+the taller a subject's control panel got, the further the instrumentation ran underneath it.
+The RA-6 declares seven joints and thirteen derived figures and put four readouts out of reach.
+Any `max-height` would have been a fraction tuned to whichever subject was tallest that week, so
+they share a flex column now: the controls take what they need and the instrumentation scrolls
+in the remainder. Measured across every subject at 1400×900, nothing overlaps and only the two
+tallest scroll at all.
 
 #### One change in display code
 

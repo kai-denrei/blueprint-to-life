@@ -64,7 +64,8 @@ html, body {
 .label-layer { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 
 .chrome { position: absolute; inset: 0; pointer-events: none; }
-.chrome > * { pointer-events: auto; }
+.chrome > *, .rail-r > * { pointer-events: auto; }
+.rail-r { pointer-events: none; }
 
 /* Mode transitions cover the ortho<->perspective snap, which cannot be interpolated. */
 #app #view,
@@ -145,7 +146,33 @@ html, body {
 .legend-q { color: var(--ink-faint); }
 
 /* Instrumentation */
-.instrumentation { top: 18px; right: 18px; width: 236px; }
+/* Right-hand rail: instrumentation at the top, controls pinned to the bottom, one column.
+
+   The instrumentation grows with the subject — the RA-6 declares seven joints and thirteen
+   derived figures — and the controls panel grows with it too. As two independent absolute
+   boxes the taller one simply covered the other, and any max-height would have been a fraction
+   tuned to whichever subject happened to be tallest that week. Sharing a flex column makes it
+   arithmetic instead: the controls take what they need and the instrumentation scrolls in the
+   remainder. */
+.rail-r {
+  position: absolute;
+  top: 18px; right: 18px; bottom: 52px;
+  width: 360px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.instrumentation {
+  position: static;
+  width: 236px;
+  min-height: 0;          /* without this a flex item refuses to shrink below its content */
+  flex: 0 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
 .instr-grid { padding: 4px 0 6px; }
 .instr-row {
   display: flex;
@@ -165,14 +192,14 @@ html, body {
   color: var(--ink-faint);
 }
 
-/* Controls.
+/* Controls. Bottom of the rail, which is what holds it clear of the badge.
 
-   Lifted clear of the bottom edge rather than sitting on the usual 18px inset: cb-badge.js
-   pins the build badge at `bottom: 8px; right: 8px`, which is inside this panel's footprint,
-   and it was landing on top of the ASSET row's buttons. Every other corner of the drawing is
-   already spoken for by a panel, so the badge keeps its corner and the panel steps up out of
-   it — the badge reads as this panel's footer instead of as debris on top of it. */
-.controls { bottom: 52px; right: 18px; width: 360px; padding: 9px 12px 11px; }
+   The rail stops at `bottom: 52px` rather than the usual 18px inset because cb-badge.js pins
+   the build badge at `bottom: 8px; right: 8px` — inside this panel's footprint — and it was
+   landing on the ASSET row's buttons. Every other corner of the drawing is already spoken for
+   by a panel, so the badge keeps its corner and the rail steps up out of it; the badge reads
+   as this panel's footer instead of as debris on top of it. */
+.controls { position: static; width: 100%; flex: none; padding: 9px 12px 11px; }
 .ctl-row { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
 .ctl-k {
   width: 54px;
@@ -327,6 +354,9 @@ html, body {
 
 @media (max-width: 820px), (pointer: coarse) and (max-width: 1024px) {
   :root { --bar-h: 86px; }
+
+  /* The sheets are fixed to the viewport, so the rail has no job on a phone. */
+  .rail-r { display: contents; }
 
   .panel { font-size: 12px; }
 

@@ -40,11 +40,18 @@ export class SchematicChrome {
     this.overlay = el('div', 'chrome');
     root.appendChild(this.overlay);
 
+    // The two right-hand panels share one column so the instrumentation can take whatever the
+    // controls leave. They used to be independent absolute boxes, which meant the taller a
+    // subject's control panel got, the further the instrumentation ran underneath it — the RA-6
+    // declares seven joints and put four readouts out of reach. A fraction tuned to today's
+    // tallest subject would just have moved the failure to the next one.
+    const rail = el('div', 'rail-r');
+    rail.append(this._instrumentation(), this._controls());
+
     this.overlay.append(
       this._titleBlock(),
       this._legend(),
-      this._instrumentation(),
-      this._controls(),
+      rail,
       this._sheetTabs(),
       this._frameMarks(),
     );
