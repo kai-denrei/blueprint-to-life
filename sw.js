@@ -13,7 +13,7 @@
  * shows a toast; skipWaiting only runs when the user says so. Reloading a WebGL app out from
  * under someone mid-orbit is exactly the thing that makes PWAs feel broken.
  */
-const CB_TOKEN = 'd6ea470b';
+const CB_TOKEN = '846f7816';
 const CACHE = `blueprint-to-life-${CB_TOKEN}`;
 const OFFLINE_URL = './offline.html';
 
@@ -36,6 +36,8 @@ const PRECACHE = [
   `./cb-badge.js?v=${CB_TOKEN}`,
   './src/camera/viewController.js',
   './src/chrome/schematic.js',
+  './src/gimbal/buildGimbal.js',
+  './src/gimbal/dimensions.js',
   './src/headless/buildHeadless.js',
   './src/headless/dimensions.js',
   './src/heptapod/buildHeptapod.js',
@@ -56,7 +58,10 @@ const PRECACHE = [
   './src/render/pbr.js',
   './src/robotarm/buildRobotArm.js',
   './src/robotarm/dimensions.js',
+  './src/server/buildServer.js',
+  './src/server/dimensions.js',
   './src/subjects/box.js',
+  './src/subjects/gimbal.js',
   './src/subjects/headless.js',
   './src/subjects/heptapod.js',
   './src/subjects/heptat.js',
@@ -66,6 +71,7 @@ const PRECACHE = [
   './src/subjects/mkvi.js',
   './src/subjects/motopod.js',
   './src/subjects/robotarm.js',
+  './src/subjects/server.js',
   './src/tank/buildTank.js',
   './src/tank/dimensions.js',
   './vendor/three/addons/controls/OrbitControls.js',

@@ -3,11 +3,11 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Eight subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
+Nine subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
 **Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
 (a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, the **RA-6** six-axis
-robot arm, and an M777-pattern 155 mm towed howitzer — plus a primitives rig for debugging the
-shader.
+robot arm, the **GS-3** three-axis gimbal platform, and an M777-pattern 155 mm towed howitzer —
+plus a primitives rig for debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -39,6 +39,8 @@ npm start             # http://127.0.0.1:5173/
 - `/?subject=robotarm` — RA-6, a six-axis industrial arm whose sliders are the head's aim
   rather than its axes: set a bearing and an elevation, then move the arm underneath and the
   head keeps pointing where it was told
+- `/?subject=gimbal` — GS-3, a stabilised director: three concentric sets of four rings nested
+  about one point on three perpendicular axes, with the sensor ball at the centre
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -96,6 +98,7 @@ src/heptapod/   asset: Heptapod Walker
 src/headless/   asset: BP-Headless01
 src/motopod/    asset: Moto // Pod
 src/robotarm/   asset: RA-6 articulated arm
+src/gimbal/     asset: GS-3 gimbal platform
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -106,7 +109,8 @@ server/serve.js static server with the cache-control split the busting layer nee
 ```
 
 Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/headless`,
-`src/motopod`, `src/robotarm`, `src/howitzer`) must not import from display code, and
+`src/motopod`, `src/robotarm`, `src/gimbal`, `src/howitzer`) must not import from display
+code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -530,6 +534,55 @@ Any `max-height` would have been a fraction tuned to whichever subject was talle
 they share a flex column now: the controls take what they need and the instrumentation scrolls
 in the remainder. Measured across every subject at 1400×900, nothing overlaps and only the two
 tallest scroll at all.
+
+### What the gimbal cost: nothing, and two millimetres
+
+The GS-3 is twelve rings in three concentric sets about one point, on three perpendicular axes,
+with a sensor ball at the centre. Two asset files, one descriptor, one registry line, and no new
+geometry generator at all: every one of the twelve rings is `trackBand` with a single circle in
+the list, which is the third subject running to lean on the tank's track generator as a general
+ring primitive.
+
+**The geometry is derived from one radius.** A gimbal ring pivots about its own *diameter* — its
+axis lies in its own plane — so an inner set sweeps a sphere inside the next set's bore. That
+single fact places everything: `ringStack` walks the three sets outside-in, and each set's outer
+race is solved from the previous set's bore. Twelve typed radii would have been twelve chances
+to put one ring through another, invisible until someone rotated a stage and watched the drawing
+tear. The invariant drives all three stages through their declared travel and measures the real
+gap on real vertices.
+
+That invariant found the two millimetres. The first version of the nesting rule was
+`outer = bore − clearance`, which is wrong: a ring has *width*, so its corners sit at
+`sqrt(r² + (w/2)²)` from the centre, not at `r`. The rings still did not touch — but the
+drawing's 22 mm clearance figure was a number nothing in the geometry honoured, and the real gap
+was 20 mm. Solving for `r` instead makes the swept corner land exactly on `bore − clearance`.
+
+The same class of error, one link further down the chain: the payload's aperture disc had been
+seated by eye and its rim stood 0.5 mm proud of the ball, which put it inside the innermost ring
+set. A disc of radius `a` is inscribed in a sphere of radius `R` at `sqrt(R² − a²)`; seating it
+there and backing off half its thickness is exact, and the payload radius itself is just whatever
+the innermost bore leaves.
+
+#### Gimbal lock is quoted, not hidden
+
+Three rings on three axes have a famous failure: at 90° of bank the elevation axis lies on top of
+the azimuth axis, the two become one control, and the platform can no longer be pointed where it
+likes. The axes' scalar triple product works out to exactly `cos(bank)`, so this is the real
+condition rather than a proxy for it.
+
+A real director accepts lock, adds a fourth axis, or restricts travel. This one restricts travel
+— ±72°, stopping 18° short — and the title block carries `LOCK AT BANK ±90°`, `LOCK MARGIN 18°`
+and `AXIS INDEP. 0.309` rather than a footnote. There is an invariant on the condition, on the
+margin, and on independence falling monotonically as bank grows, so "margin" means something.
+
+#### A machine that cannot be dressed
+
+`cableRun` carries one rule in its docstring: a run must stay inside one rigid frame, because
+there is no skinning here and a hose across a driven pivot tears. On a gimbal that rule has no
+solution at all — nothing can cross three continuously-rotating axes without winding up. So the
+machine uses different hardware: a slip ring on each axis, and all the dress-out (junction box,
+conduit, data plate) on the fixed frame. That is the honest answer, and it is why this is the
+first subject with a `Details_Group` that touches nothing which moves.
 
 #### One change in display code
 

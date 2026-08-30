@@ -25,6 +25,8 @@ import { buildHeadless, updateHeadlessStance } from '../src/headless/buildHeadle
 import { buildMotopod, updateMotopodRide } from '../src/motopod/buildMotopod.js';
 import { buildRobotArm, updateRobotArmAim } from '../src/robotarm/buildRobotArm.js';
 import { RADIM, aimIsAlwaysReachable, solveAim } from '../src/robotarm/dimensions.js';
+import { buildGimbal } from '../src/gimbal/buildGimbal.js';
+import { GDIM, axisIndependence, payloadRadius, ringStack, sightLine } from '../src/gimbal/dimensions.js';
 import { MPDIM, overallHeight, overallLength, overallWidth, rideLift, treadRadius } from '../src/motopod/dimensions.js';
 import { BHDIM, crownHeight, crownPoint, stand } from '../src/headless/dimensions.js';
 import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
@@ -47,6 +49,7 @@ const heptapod = buildHeptapod();
 const headless = buildHeadless();
 const motopod = buildMotopod();
 const robotarm = buildRobotArm();
+const gimbal = buildGimbal();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -151,6 +154,20 @@ const MODELS = [
                'Head_Group', 'Head_Body', 'Jaw_L_Pivot', 'Jaw_R_Pivot'],
     pivots: ['J1_Pivot', 'J2_Pivot', 'J3_Pivot', 'J4_Pivot', 'J5_Pivot', 'J6_Pivot',
              'Shoulder_Mount', 'Jaw_L_Pivot', 'Jaw_R_Pivot'],
+  },
+  {
+    // Twelve rings in three concentric sets on three perpendicular axes. The required list
+    // names one ring from each set and the whole stage chain, because "the sets nest and share
+    // a centre" is this subject's equivalent of "the running gear is instanced".
+    name: 'gimbal', root: gimbal, rootName: 'Gimbal_Root', collision: 'Base_Collision',
+    instancedGear: false, armed: false,
+    required: ['Frame_Group', 'Base_Plate', 'Base_Collision', 'Details_Group', 'Pedestal_Mesh',
+               'Slip_Ring_A', 'Slip_Ring_B', 'Slip_Ring_C', 'Cap_Bar',
+               'Bearing_North', 'Bearing_South', 'Stage_A_Pivot', 'Stage_B_Pivot',
+               'Stage_C_Pivot', 'Outer_Race_A', 'Encoder_Ring_A', 'Outer_Race_B',
+               'Encoder_Ring_B', 'Outer_Race_C', 'Encoder_Ring_C',
+               'Payload_Group', 'Sensor_Ball', 'Aperture_Mesh'],
+    pivots: ['Stage_A_Pivot', 'Stage_B_Pivot', 'Stage_C_Pivot'],
   },
   {
     name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', instancedGear: true, armed: true,
@@ -1059,6 +1076,175 @@ test('[robotarm] the head is authored where the GRIP default puts it', () => {
   );
 });
 
+console.log('\nthe gimbal — three sets of rings, one centre, three axes');
+
+const GIMBAL_CENTRE = new THREE.Vector3(0, GDIM.centre.y, 0);
+
+/**
+ * Every world-space vertex distance from the gimbal centre, for one stage's OWN ring set.
+ *
+ * Selected by the names `ringStack` derives, not by a suffix match. A suffix caught the slip
+ * ring — which is on the same stage, is called `Slip_Ring_A`, and sits deep inside the bore —
+ * and reported the set as colliding with itself.
+ */
+function stageRadii(root, tag) {
+  const names = new Set(ringStack().find((s) => s.tag === tag).rings.map((r) => r.name));
+  const v = new THREE.Vector3();
+  let lo = Infinity, hi = 0;
+  root.getObjectByName(`Stage_${tag}_Pivot`).traverse((o) => {
+    if (!o.isMesh || !names.has(o.name)) return;
+    const pos = o.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      const d = v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).distanceTo(GIMBAL_CENTRE);
+      lo = Math.min(lo, d); hi = Math.max(hi, d);
+    }
+  });
+  return { lo, hi };
+}
+
+test('[gimbal] the twelve ring radii are the derived ones, not typed', () => {
+  // One radius and two tables produce all twelve. Typing them instead would have been twelve
+  // chances to put a ring through another, invisible until someone rotated a stage.
+  gimbal.updateMatrixWorld(true);
+  for (const stage of ringStack()) {
+    for (const ring of stage.rings) {
+      const mesh = gimbal.getObjectByName(ring.name);
+      assert.ok(mesh, `missing ring ${ring.name}`);
+      mesh.geometry.computeBoundingSphere();
+      assert.ok(Math.abs(mesh.geometry.boundingSphere.radius - ring.r) < 0.004,
+        `${ring.name}: built at ${mesh.geometry.boundingSphere.radius.toFixed(4)}, derived ${ring.r.toFixed(4)}`);
+    }
+  }
+});
+
+test('[gimbal] all twelve rings share one centre at every pose', () => {
+  /**
+   * What "concentric" actually means on this machine, and the thing a misplaced pivot breaks.
+   * Every stage pivot sits at the origin of its parent's frame, so the whole assembly turns
+   * about one point — check it at a deliberately skewed pose, where an offset would show.
+   */
+  for (const pose of [{ azimuth: 0, bank: 0, elevation: 0 },
+                      { azimuth: 137, bank: -51, elevation: 62 },
+                      { azimuth: -180, bank: GDIM.limits.bank, elevation: -GDIM.limits.elevation }]) {
+    setPose(gimbal, pose);
+    for (const stage of ringStack()) {
+      for (const ring of stage.rings) {
+        const p = gimbal.getObjectByName(ring.name).getWorldPosition(new THREE.Vector3());
+        assert.ok(p.distanceTo(GIMBAL_CENTRE) < 1e-6,
+          `${ring.name} is ${p.distanceTo(GIMBAL_CENTRE).toFixed(5)} m off the gimbal centre`);
+      }
+    }
+  }
+});
+
+test('[gimbal] an inner set never touches the set outside it, at any pose', () => {
+  /**
+   * The nesting rule, measured rather than assumed.
+   *
+   * A gimbal ring pivots about its own diameter, so an inner set sweeps a SPHERE of its outer
+   * radius inside the next set's bore. `ringStack` derives every radius from that inequality;
+   * this drives all three stages through their declared travel and measures the real gap on
+   * real vertices. A ring band widened anywhere in the table shows up here as a collision.
+   */
+  const L = GDIM.limits;
+  let worst = Infinity, at = null;
+  for (const az of [-L.azimuth, 0, L.azimuth]) {
+    for (const bank of [-L.bank, -33, 0, 33, L.bank]) {
+      for (const el of [-L.elevation, -44, 0, 44, L.elevation]) {
+        setPose(gimbal, { azimuth: az, bank, elevation: el });
+        const gaps = [
+          stageRadii(gimbal, 'A').lo - stageRadii(gimbal, 'B').hi,
+          stageRadii(gimbal, 'B').lo - stageRadii(gimbal, 'C').hi,
+        ];
+        const g = Math.min(...gaps);
+        if (g < worst) { worst = g; at = { az, bank, el }; }
+      }
+    }
+  }
+  assert.ok(worst > 0, `sets collide at ${JSON.stringify(at)} — overlap ${(-worst).toFixed(4)} m`);
+  assert.ok(Math.abs(worst - GDIM.clearance) < 0.002,
+    `worst gap is ${worst.toFixed(4)} m but the table declares ${GDIM.clearance} m of clearance`);
+  setPose(gimbal, GDIM.rest);
+});
+
+test('[gimbal] the payload fits the innermost bore', () => {
+  // Last link in the same chain. Grow a ring band anywhere and the ball shrinks to suit; it is
+  // never re-typed, so it can never be left inside a ring.
+  const bore = ringStack()[2].bore;
+  assert.ok(payloadRadius() > 0, 'the ring stack has eaten the payload');
+  assert.equal(Number((bore - payloadRadius()).toFixed(6)), Number(GDIM.payload.clearance.toFixed(6)));
+
+  gimbal.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  let furthest = 0;
+  gimbal.getObjectByName('Payload_Group').traverse((o) => {
+    if (!o.isMesh) return;
+    const pos = o.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      furthest = Math.max(furthest,
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld).distanceTo(GIMBAL_CENTRE));
+    }
+  });
+  assert.ok(furthest < bore,
+    `the payload reaches ${furthest.toFixed(4)} m, past the elevation bore at ${bore.toFixed(4)} m`);
+});
+
+test('[gimbal] the declared travel stops short of gimbal lock', () => {
+  /**
+   * The famous failure, and the one thing a three-ring gimbal cannot be talked out of: at 90°
+   * of bank the elevation axis lies on the azimuth axis, the two become one control, and the
+   * platform can no longer be pointed where it likes. The axes' scalar triple product is
+   * exactly cos(bank), so this is the real condition rather than a proxy for it.
+   *
+   * A real director accepts lock, adds a fourth axis, or restricts travel. This one restricts
+   * travel — and the drawing quotes the margin instead of hiding it.
+   */
+  assert.ok(GDIM.limits.bank < 90, 'the bank travel reaches gimbal lock');
+  assert.equal(Number(axisIndependence(0).toFixed(6)), 1, 'upright, the three axes are orthogonal');
+  assert.equal(Number(axisIndependence(90).toFixed(6)), 0, 'the lock condition is not at 90°');
+  assert.ok(axisIndependence(GDIM.limits.bank) > 0.30,
+    `at the bank stop the axes are only ${axisIndependence(GDIM.limits.bank).toFixed(3)} independent`);
+  // Monotone on the way there, so "margin" means something.
+  for (const b of [10, 30, 50, GDIM.limits.bank]) {
+    assert.ok(axisIndependence(b) < axisIndependence(b - 10), 'independence must fall as bank grows');
+  }
+});
+
+test('[gimbal] the three stage axes are mutually perpendicular', () => {
+  // What makes it a three-axis gimbal rather than three bearings in a row. Read off the built
+  // matrices at rest, from the axis each joint actually declares.
+  setPose(gimbal, GDIM.rest);
+  const axes = gimbal.userData.joints.map((j) => {
+    const node = gimbal.getObjectByName(j.targets[0].node);
+    const e = node.matrixWorld.elements;
+    const col = { x: [e[0], e[1], e[2]], y: [e[4], e[5], e[6]], z: [e[8], e[9], e[10]] }[j.targets[0].axis];
+    return new THREE.Vector3(...col).normalize();
+  });
+  assert.equal(axes.length, 3);
+  for (let i = 0; i < 3; i++) {
+    const dot = Math.abs(axes[i].dot(axes[(i + 1) % 3]));
+    assert.ok(dot < 1e-6, `stage axes ${i} and ${(i + 1) % 3} are not perpendicular (dot ${dot})`);
+  }
+});
+
+test('[gimbal] the aperture looks where the three angles say it does', () => {
+  // The payload's optical axis is its local +Z, carried by all three stages. `sightLine` is the
+  // closed form of that chain, including the elevation sign inversion — this holds the built
+  // matrices to it so the two cannot drift apart.
+  for (const pose of [{ azimuth: 0, bank: 0, elevation: 0 },
+                      { azimuth: 35, bank: 0, elevation: 25 },
+                      { azimuth: -110, bank: 40, elevation: -60 },
+                      { azimuth: 180, bank: -GDIM.limits.bank, elevation: GDIM.limits.elevation }]) {
+    setPose(gimbal, pose);
+    const e = gimbal.getObjectByName('Payload_Group').matrixWorld.elements;
+    const got = new THREE.Vector3(e[8], e[9], e[10]).normalize();
+    const want = new THREE.Vector3(...sightLine(pose));
+    assert.ok(got.distanceTo(want) < 1e-6,
+      `${JSON.stringify(pose)}: aperture at ${got.toArray().map((n) => n.toFixed(3))}, solve says ${want.toArray().map((n) => n.toFixed(3))}`);
+  }
+  setPose(gimbal, GDIM.rest);
+});
+
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
@@ -1101,7 +1287,7 @@ console.log('\nasset / display boundary');
 
 test('asset code never imports from display code', () => {
   const offenders = [];
-  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'robotarm', 'howitzer'].map((d) => join(ROOT, 'src', d));
+  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'robotarm', 'gimbal', 'howitzer'].map((d) => join(ROOT, 'src', d));
   for (const file of assetDirs.flatMap(walk)) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
@@ -1132,7 +1318,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="d6ea470b">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="846f7816">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];
