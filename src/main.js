@@ -130,9 +130,13 @@ function applyArticulation() {
     const span = j.max - j.min;
     const t = span === 0 ? 0 : (jointValues[j.key] - j.min) / span;
     for (const target of j.targets) {
-      target.object.rotation[target.axis] = THREE.MathUtils.degToRad(
-        target.from + t * (target.to - target.from),
-      );
+      const v = target.from + t * (target.to - target.from);
+      // A target drives a rotation unless it says otherwise. `prop: 'position'` is the whole
+      // extension the server rack's sliding sled needed: every joint before it was a hinge, so
+      // "a joint is a rotation in degrees" had never had to be anything else. A target that
+      // omits `prop` behaves exactly as it always did.
+      if (target.prop === 'position') target.object.position[target.axis] = v;
+      else target.object.rotation[target.axis] = THREE.MathUtils.degToRad(v);
     }
   }
   // Some subjects need a fix-up after their joints move — the howitzer's road wheels are one

@@ -6,6 +6,7 @@ import { HEADLESS_SUBJECT } from './headless.js';
 import { MOTOPOD_SUBJECT } from './motopod.js';
 import { ROBOTARM_SUBJECT } from './robotarm.js';
 import { GIMBAL_SUBJECT } from './gimbal.js';
+import { SERVER_SUBJECT } from './server.js';
 import { HOWITZER_SUBJECT } from './howitzer.js';
 import { BOX_SUBJECT } from './box.js';
 
@@ -24,6 +25,7 @@ export const SUBJECTS = {
   motopod: { label: 'MOTOPOD', subject: MOTOPOD_SUBJECT },
   robotarm: { label: 'RA-6 ARM', subject: ROBOTARM_SUBJECT },
   gimbal: { label: 'GS-3 GIMBAL', subject: GIMBAL_SUBJECT },
+  server: { label: 'SERVER01', subject: SERVER_SUBJECT },
   howitzer: { label: 'HOWITZER', subject: HOWITZER_SUBJECT },
   box: { label: 'BOX RIG', subject: BOX_SUBJECT },
 };

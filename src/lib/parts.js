@@ -25,8 +25,24 @@ import * as THREE from 'three';
  *    itself in the asset would have moved display state back into the geometry.
  */
 
-/** Emissive channels. The value is what lands in the vertex attribute. */
-export const EMISSIVE = { none: 0, primary: 1, secondary: 2 };
+/**
+ * Emissive channels. The value is what lands in the vertex attribute.
+ *
+ * Four, and four is a ceiling rather than a round number: the blueprint pass carries the
+ * channel as `emissive * 0.25` in an 8-bit alpha, so 1..4 come back exactly and a fifth would
+ * clamp into the fourth. `EMISSIVE_MAX` exists so that limit is asserted rather than
+ * rediscovered by someone whose new accent silently renders as red.
+ *
+ * The growth is worth noting: this started as a boolean on the MK-CX, became a channel on the
+ * Hepta-T because a second vehicle wanted a different colour, and the server rack's green and
+ * red cost exactly two palette entries and two shader branches. Nothing on the asset side
+ * changed at all — `registerPart(mesh, { emissive: 'tertiary' })` is the same call it always
+ * was. That is what the Hepta-T bought by making it a channel instead of a flag.
+ */
+export const EMISSIVE = { none: 0, primary: 1, secondary: 2, tertiary: 3, quaternary: 4 };
+
+/** The highest channel the G-buffer encoding can carry. See the note above. */
+export const EMISSIVE_MAX = 4;
 
 let nextId = 1;
 
@@ -39,7 +55,8 @@ export function resetPartIds() {
  * @param {object} [opts]
  * @param {[number,number,number]} [opts.explode]  offset applied at full explode, in parent space
  * @param {boolean} [opts.explodable=true]
- * @param {boolean|'primary'|'secondary'} [opts.emissive=false]  powered element, and on which channel
+ * @param {boolean|'primary'|'secondary'|'tertiary'|'quaternary'} [opts.emissive=false]
+ *        powered element, and on which channel
  */
 export function registerPart(object, opts = {}) {
   const { explode = [0, 0, 0], explodable = true, emissive = false } = opts;

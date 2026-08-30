@@ -13,7 +13,7 @@
  * shows a toast; skipWaiting only runs when the user says so. Reloading a WebGL app out from
  * under someone mid-orbit is exactly the thing that makes PWAs feel broken.
  */
-const CB_TOKEN = '846f7816';
+const CB_TOKEN = 'ceb25b9d';
 const CACHE = `blueprint-to-life-${CB_TOKEN}`;
 const OFFLINE_URL = './offline.html';
 

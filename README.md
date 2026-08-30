@@ -3,11 +3,11 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Nine subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
+Ten subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
 **Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
 (a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, the **RA-6** six-axis
-robot arm, the **GS-3** three-axis gimbal platform, and an M777-pattern 155 mm towed howitzer —
-plus a primitives rig for debugging the shader.
+robot arm, the **GS-3** three-axis gimbal platform, **SERVER01** (a 42U compute rack), and an
+M777-pattern 155 mm towed howitzer — plus a primitives rig for debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -41,6 +41,9 @@ npm start             # http://127.0.0.1:5173/
   head keeps pointing where it was told
 - `/?subject=gimbal` — GS-3, a stabilised director: three concentric sets of four rings nested
   about one point on three perpendicular axes, with the sensor ball at the centre
+- `/?subject=server` — SERVER01, a 42U compute rack: 28 instanced sleds on the EIA-310 grid,
+  one pulled out on a slide to expose its board and package, a rear fan door, and green light
+  accents in the manner of the MK-CX's lift emitters
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -99,6 +102,7 @@ src/headless/   asset: BP-Headless01
 src/motopod/    asset: Moto // Pod
 src/robotarm/   asset: RA-6 articulated arm
 src/gimbal/     asset: GS-3 gimbal platform
+src/server/     asset: SERVER01 compute rack
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -109,8 +113,8 @@ server/serve.js static server with the cache-control split the busting layer nee
 ```
 
 Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/headless`,
-`src/motopod`, `src/robotarm`, `src/gimbal`, `src/howitzer`) must not import from display
-code, and
+`src/motopod`, `src/robotarm`, `src/gimbal`, `src/server`, `src/howitzer`) must not import
+from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -583,6 +587,78 @@ solution at all — nothing can cross three continuously-rotating axes without w
 machine uses different hardware: a slip ring on each axis, and all the dress-out (junction box,
 conduit, data plate) on the fixed frame. That is the honest answer, and it is why this is the
 first subject with a `Details_Group` that touches nothing which moves.
+
+### What the rack changed: joints stopped being hinges
+
+SERVER01 is the tenth subject and the first that is not a vehicle. Two things came out of that,
+and both are about repetition.
+
+**It earns an InstancedMesh, and it is the first thing since the tanks to.** Twenty-eight of the
+compute sleds are the same part at the same pitch — twenty-eight copies of one static transform,
+which is exactly the test the walker's docstring set when it declined to instance its feet. Five
+subjects in a row had come out on the *other* side of that test; this is the first to come out
+on this one.
+
+**The twenty-ninth is not, for the same reason read backwards.** One sled is pulled out for
+service, so it carries a different transform and has to be its own node — and getting it out
+needed the project's first **prismatic joint**. Eight subjects of turret rings, trunnions,
+trails, canopies and wrists had never made "a joint is a rotation, in degrees" have to be
+anything else. A target can now say `prop: 'position'`, its range is in metres, and a target
+that omits `prop` behaves exactly as it always did. One conditional in `applyArticulation`.
+
+That extension brought a collision worth an invariant: `applyExplode` also writes `position`,
+restoring every part from a stored rest pose. A node driven by both would snap back to wherever
+the slider left it the first time anyone touched EXPLODE — so a position-driven node must not be
+explodable, and the joint contract check now says so for every subject.
+
+The other correction the extension needed was quieter. A position target sets an **absolute**
+coordinate, exactly as a rotation target sets an absolute angle, so its `from` is the node's rest
+Z rather than zero. Getting that wrong made the sled travel 0.20 m of its declared 0.62 m — and
+`faceZ()` moved into the dimensions module so the builder and the joint could not disagree about
+where "closed" is.
+
+#### Two more accent channels, and why it was cheap
+
+The brief asked for green light accents "like the MK-CX's lift emitters", plus red and white
+buttons. Green and red are accent channels 3 and 4 — new colours, and *nothing on the asset side
+changed to get them*: `registerPart(mesh, { emissive: 'tertiary' })` is the same call it always
+was. Two palette entries and two shader branches. That is precisely what the Hepta-T bought when
+it turned `emissive` from a boolean into a channel, and it took until now to collect.
+
+Four is also the ceiling, which is worth knowing rather than discovering. The channel travels as
+`emissive * 0.25` in an 8-bit alpha, so 1–4 land on 64, 128, 191 and 255 and come back exactly;
+a fifth would encode as 1.25, clamp to 1.0 and silently render as channel 4. `EMISSIVE_MAX`
+exists so that limit is asserted, and an invariant sweeps every subject against it.
+
+**White is the one colour the schematic cannot say.** The blueprint's paper is itself near-white,
+so a white accent is invisible on it. The illuminated start buttons are therefore a white PBR
+material with a lit *green ring* — which is both what a real illuminated start button looks like
+and the only version of "white button" that survives being drawn on paper.
+
+#### A rack is a pitch before it is a shape
+
+EIA-310 fixes the rack unit at 44.45 mm, so the layout is a table of U spans and every Y on the
+machine is `u * U`. Nothing is eyeballed vertically, the 2.000 m height is plinth + 42U + cap,
+and an invariant checks that the elevation covers all 42 units exactly once — two units claiming
+one slot is a collision and a gap is a hole, and neither is visible in a render of a closed rack.
+
+It also ships **open**: front door at 118°, rear at 96°, one sled 0.42 m out. Every other subject
+rests closed because a vehicle's silhouette is the drawing; a rack's silhouette is a box, and
+everything worth dimensioning is inside it.
+
+#### Two things that cost part ids
+
+The first pass modelled the vent grids, port rows and heatsink fins as individual meshes and
+spent 215 of the id channel's 255 on louvres. They are each *one* part — a vent grid belongs to
+its panel, a port row is a connector block, a heatsink is a heatsink — so they merge into single
+geometries, and the count came down to 82. The same argument makes each fan rotor one mesh
+rather than a hub and seven blades: the outline pass would otherwise draw a seam through the
+middle of a turned component that has none.
+
+`instancedGear` also grew a second time. It had been renamed from `wheels` by the Moto // Pod;
+now it holds the node *name*, because the check hardcoded `Wheels_Instanced` and a rack has no
+version of that noun. Twice a vehicle assumption has been filed off this flag, and both times the
+fix was to let the subject say what it has instead of the checklist guessing.
 
 #### One change in display code
 

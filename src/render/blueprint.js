@@ -105,6 +105,8 @@ const COMPOSITE_FRAG = /* glsl */`
   uniform vec3  uAccent;
   uniform vec3  uGlow;        // accent channel 1
   uniform vec3  uGlow2;       // accent channel 2
+  uniform vec3  uGlow3;       // accent channel 3
+  uniform vec3  uGlow4;       // accent channel 4
 
   out vec4 fragColor;
 
@@ -184,9 +186,20 @@ const COMPOSITE_FRAG = /* glsl */`
       // two-blues-and-paper restraint: on a schematic "this part is energised" is a category of
       // information, not decoration, and it is the one thing a blue-on-blue fill cannot say.
       // Two channels, so a vehicle can distinguish its systems — or simply have its own accent.
+      //
+      // FOUR channels, and four is the ceiling rather than a round number. The channel travels
+      // as emissive * 0.25 in an 8-bit alpha, so 1..4 land on 64, 128, 191 and 255 and come
+      // back exactly; a fifth would encode as 1.25, clamp to 1.0 and read as channel 4. The
+      // encoding was sized for four by accident of that 0.25, and EMISSIVE_MAX in
+      // src/lib/parts.js is where that limit is asserted rather than discovered.
+      //
+      // (No backticks in here: this whole shader is a template literal, and a stray one ends
+      // the string with a syntax error a hundred lines away from the comment that caused it.)
       int chan = int(floor(ink.a * 4.0 + 0.5));
       if (chan == 1) col = mix(col, uGlow, 0.82);
-      else if (chan >= 2) col = mix(col, uGlow2, 0.82);
+      else if (chan == 2) col = mix(col, uGlow2, 0.82);
+      else if (chan == 3) col = mix(col, uGlow3, 0.82);
+      else if (chan >= 4) col = mix(col, uGlow4, 0.82);
     }
     // Legend hover highlight. Resolved from the part-id channel, so it costs nothing at the
     // asset end: no per-mesh material swap, no second draw.
@@ -211,6 +224,8 @@ export const BLUEPRINT_PALETTE = {
   accent:    0xd06a2a,
   glow:      0x8b46c9,
   glow2:     0x1f8fd0,
+  glow3:     0x25b463,
+  glow4:     0xd8442f,
 };
 
 export class BlueprintRenderer {
@@ -274,6 +289,8 @@ export class BlueprintRenderer {
         uAccent: { value: new THREE.Color(this.palette.accent) },
         uGlow: { value: new THREE.Color(this.palette.glow) },
         uGlow2: { value: new THREE.Color(this.palette.glow2) },
+        uGlow3: { value: new THREE.Color(this.palette.glow3) },
+        uGlow4: { value: new THREE.Color(this.palette.glow4) },
       },
     });
 

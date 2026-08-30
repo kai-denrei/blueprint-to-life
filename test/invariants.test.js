@@ -25,6 +25,11 @@ import { buildHeadless, updateHeadlessStance } from '../src/headless/buildHeadle
 import { buildMotopod, updateMotopodRide } from '../src/motopod/buildMotopod.js';
 import { buildRobotArm, updateRobotArmAim } from '../src/robotarm/buildRobotArm.js';
 import { RADIM, aimIsAlwaysReachable, solveAim } from '../src/robotarm/dimensions.js';
+import { buildServer } from '../src/server/buildServer.js';
+import {
+  SDIM, elevationCoverage, fieldHeight, overallHeight as rackHeight, sledSlots, spanCentreY,
+} from '../src/server/dimensions.js';
+import { EMISSIVE, EMISSIVE_MAX } from '../src/lib/parts.js';
 import { buildGimbal } from '../src/gimbal/buildGimbal.js';
 import { GDIM, axisIndependence, payloadRadius, ringStack, sightLine } from '../src/gimbal/dimensions.js';
 import { MPDIM, overallHeight, overallLength, overallWidth, rideLift, treadRadius } from '../src/motopod/dimensions.js';
@@ -50,6 +55,7 @@ const headless = buildHeadless();
 const motopod = buildMotopod();
 const robotarm = buildRobotArm();
 const gimbal = buildGimbal();
+const server = buildServer();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -70,6 +76,12 @@ const byName = (n) => tank.getObjectByName(n);
  * had never meant "has wheels" — the walker set it false with eight legs and the exoframe with
  * two — it meant "the running gear is one InstancedMesh". Now it says so.
  *
+ * SERVER01 then made it grow a second time. Its repeated part is twenty-eight compute sleds, so
+ * the flag holds the NODE NAME rather than `true`: the check had hardcoded `Wheels_Instanced`,
+ * which is a tank noun that a rack has no version of. Twice now this flag has had a vehicle
+ * assumption filed off it, and both times the fix was to make the subject say what it has
+ * instead of the checklist guessing.
+ *
  * `armed` is the same shape of flag, added by BP-Headless01 — an unarmed exoframe with hands
  * instead of a gun. Worth noting what it cost, because it was almost nothing: unlike wheels,
  * "vehicles are armed" had never leaked into the shared contract, only into each subject's own
@@ -79,7 +91,7 @@ const byName = (n) => tank.getObjectByName(n);
  */
 const MODELS = [
   {
-    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision', instancedGear: true, armed: true,
+    name: 'tank', root: tank, rootName: 'Tank_Root', collision: 'Hull_Collision', instancedGear: 'Wheels_Instanced', armed: true,
     required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Turret_Pivot', 'Barrel_Pivot'],
@@ -96,7 +108,7 @@ const MODELS = [
              'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
   },
   {
-    name: 'heptat', root: heptat, rootName: 'HeptaT_Root', collision: 'Chassis_Collision', instancedGear: true, armed: true,
+    name: 'heptat', root: heptat, rootName: 'HeptaT_Root', collision: 'Chassis_Collision', instancedGear: 'Wheels_Instanced', armed: true,
     required: ['Chassis_Mesh', 'Chassis_Collision', 'Cab_Mesh', 'CargoBay_Mesh',
                'Ramp_Pivot', 'Ramp_Mesh', 'Turret_Pivot', 'Turret_Mesh',
                'Barrel_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
@@ -170,7 +182,21 @@ const MODELS = [
     pivots: ['Stage_A_Pivot', 'Stage_B_Pivot', 'Stage_C_Pivot'],
   },
   {
-    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', instancedGear: true, armed: true,
+    // A rack: the first non-vehicle, and the first subject since the tanks whose repeated part
+    // is genuinely twenty-eight copies of one static transform. `instancedGear` names the node
+    // rather than being a boolean, because "the running gear is one InstancedMesh" was already
+    // the flag's real meaning and this subject's repeated part is not running gear.
+    name: 'server', root: server, rootName: 'Server_Root', collision: 'Rack_Collision',
+    instancedGear: 'Sleds_Instanced', armed: false,
+    required: ['Frame_Group', 'Plinth_Mesh', 'Top_Cap', 'Rail_L', 'Rail_R', 'Rack_Collision',
+               'Details_Group', 'Sleds_Instanced', 'SledLights_Instanced', 'Service_Slide',
+               'Service_Sled_Mesh', 'Board_Mesh', 'IC_Group', 'IC_Die', 'Heatsink_Mesh',
+               'Button_EPO', 'Button_Start_1', 'Door_Front_Pivot', 'Door_Rear_Pivot',
+               'Fan_1_Spin', 'Fan_1_Rotor'],
+    pivots: ['Door_Front_Pivot', 'Door_Rear_Pivot', 'Service_Slide', 'Fan_1_Spin', 'Fan_6_Spin'],
+  },
+  {
+    name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', instancedGear: 'Wheels_Instanced', armed: true,
     required: ['Chassis_Mesh', 'Chassis_Collision', 'Traverse_Pivot', 'TopCarriage_Mesh',
                'Elevation_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
     pivots: ['Traverse_Pivot', 'Elevation_Pivot', 'Trail_Front_L', 'Trail_Rear_R'],
@@ -262,9 +288,10 @@ for (const m of MODELS) {
   });
 
   test(`[${m.name}] running gear matches what the subject claims`, () => {
-    const w = m.root.getObjectByName('Wheels_Instanced');
     if (m.instancedGear) {
-      assert.ok(w?.isInstancedMesh, 'Wheels_Instanced must be an InstancedMesh');
+      const w = m.root.getObjectByName(m.instancedGear);
+      assert.ok(w?.isInstancedMesh, `${m.instancedGear} must be an InstancedMesh`);
+      assert.ok(w.count > 1, `${m.instancedGear} instances ${w.count} — that is not an array`);
       const loose = [];
       m.root.traverse((o) => {
         if (o.isMesh && !o.isInstancedMesh && /RoadWheel/i.test(o.name)) loose.push(o.name);
@@ -324,9 +351,19 @@ for (const m of MODELS) {
       assert.ok(j.value >= j.min && j.value <= j.max, `joint ${j.key} default is out of range`);
       assert.ok(j.targets.length > 0, `joint ${j.key} drives nothing`);
       for (const t of j.targets) {
-        assert.ok(m.root.getObjectByName(t.node), `joint ${j.key} targets missing node ${t.node}`);
+        const node = m.root.getObjectByName(t.node);
+        assert.ok(node, `joint ${j.key} targets missing node ${t.node}`);
         assert.ok(['x', 'y', 'z'].includes(t.axis), `joint ${j.key} bad axis ${t.axis}`);
         assert.ok(Number.isFinite(t.from) && Number.isFinite(t.to), `joint ${j.key} bad range`);
+        assert.ok(t.prop === undefined || t.prop === 'position' || t.prop === 'rotation',
+          `joint ${j.key} has an unknown target prop ${t.prop}`);
+        // A prismatic target and the explode system both write `position`, and the explode
+        // system restores from a stored rest pose — so a node driven by both would snap back to
+        // wherever the slider last left it the first time anyone touched EXPLODE.
+        if (t.prop === 'position') {
+          assert.ok(!node.userData.rest,
+            `joint ${j.key} slides ${t.node}, which is also explodable — the two fight over position`);
+        }
       }
     }
     const keys = joints.map((j) => j.key);
@@ -464,8 +501,9 @@ function setJoint(root, key, value, after) {
   const t = (value - j.min) / (j.max - j.min);
   for (const target of j.targets) {
     const node = root.getObjectByName(target.node);
-    node.rotation[target.axis] =
-      ((target.from + t * (target.to - target.from)) * Math.PI) / 180;
+    const v = target.from + t * (target.to - target.from);
+    if (target.prop === 'position') node.position[target.axis] = v;
+    else node.rotation[target.axis] = (v * Math.PI) / 180;
   }
   after?.(root);
   root.updateMatrixWorld(true);
@@ -946,8 +984,10 @@ function setPose(root, values, after) {
     const j = root.userData.joints.find((x) => x.key === key);
     const t = (value - j.min) / (j.max - j.min);
     for (const target of j.targets) {
-      root.getObjectByName(target.node).rotation[target.axis] =
-        ((target.from + t * (target.to - target.from)) * Math.PI) / 180;
+      const node = root.getObjectByName(target.node);
+      const v = target.from + t * (target.to - target.from);
+      if (target.prop === 'position') node.position[target.axis] = v;
+      else node.rotation[target.axis] = (v * Math.PI) / 180;
     }
   }
   after?.(root);
@@ -1245,6 +1285,136 @@ test('[gimbal] the aperture looks where the three angles say it does', () => {
   setPose(gimbal, GDIM.rest);
 });
 
+console.log('\nthe rack — a pitch, an array, and the first joint that is not a hinge');
+
+test('[server] the elevation covers all 42U exactly once', () => {
+  // A rack is a pitch before it is a shape. Two units claiming the same slot is a collision and
+  // a gap is a hole in the drawing, and neither is visible in a render of a closed rack.
+  const cov = elevationCoverage();
+  const dupes = [...cov].filter(([, n]) => n > 1).map(([u]) => u);
+  const missing = [];
+  for (let u = 1; u <= SDIM.units; u++) if (!cov.has(u)) missing.push(u);
+  assert.deepEqual(dupes, [], `units claimed twice: ${dupes.join(', ')}`);
+  assert.deepEqual(missing, [], `units unaccounted for: ${missing.join(', ')}`);
+});
+
+test('[server] every vertical figure is a whole number of rack units', () => {
+  // The one dimension a rack actually has to honour. `unitY` and `spanCentreY` are the only
+  // things that place anything vertically, so this checks the derivation rather than the taste:
+  // 42U of field, and an overall height that is plinth + field + cap and nothing else.
+  assert.equal(Number(fieldHeight().toFixed(6)), Number((SDIM.units * SDIM.U).toFixed(6)));
+  assert.equal(
+    Number(rackHeight().toFixed(6)),
+    Number((SDIM.frame.plinth + fieldHeight() + SDIM.frame.cap).toFixed(6)),
+  );
+  // Each instanced sled sits on the grid, not near it.
+  for (const u of sledSlots()) {
+    const offset = (spanCentreY(u, 1) - SDIM.frame.plinth - SDIM.U / 2) / SDIM.U;
+    assert.ok(Math.abs(offset - Math.round(offset)) < 1e-9,
+      `slot U${u} is ${offset.toFixed(4)} units off the grid`);
+  }
+});
+
+test('[server] the sleds are instanced and the serviced one is not', () => {
+  /**
+   * The instancing decision, both ways round.
+   *
+   * Twenty-eight sleds are twenty-eight copies of one static transform, which is the test the
+   * walker's docstring set when it declined to instance its feet. The twenty-ninth carries a
+   * different transform — it slides — so it cannot be in the array, and it is its own node.
+   * Get this wrong in either direction and the drawing still renders: either a rack with one
+   * sled permanently flush, or twenty-eight loose meshes eating the id channel.
+   */
+  const sleds = server.getObjectByName('Sleds_Instanced');
+  const lights = server.getObjectByName('SledLights_Instanced');
+  assert.ok(sleds.isInstancedMesh && lights.isInstancedMesh);
+  assert.equal(sleds.count, sledSlots().length);
+  assert.equal(lights.count, sleds.count, 'the lit slots must cover the same slots as the bodies');
+  assert.ok(sleds.count >= 8, 'an array this small is not worth instancing');
+
+  // And nothing loose is duplicating them.
+  const loose = [];
+  server.traverse((o) => {
+    if (o.isMesh && !o.isInstancedMesh && /^Sled_\d/.test(o.name)) loose.push(o.name);
+  });
+  assert.deepEqual(loose, [], 'sleds must be instanced, not N loose meshes');
+
+  const service = server.getObjectByName('Service_Sled_Mesh');
+  assert.ok(service && !service.isInstancedMesh, 'the serviced sled must be its own mesh');
+  assert.equal(service.parent.name, 'Service_Slide');
+});
+
+test('[server] the sled slides, and the slide is not explodable', () => {
+  /**
+   * The project's first prismatic joint, and the collision it introduces.
+   *
+   * `applyExplode` writes `position` from a stored rest pose; a `prop: 'position'` target writes
+   * `position` from a slider. A node driven by both would snap back to wherever the slider left
+   * it the first time anyone touched EXPLODE — and the explode invariant's exact-return check
+   * would start failing for a reason nothing pointed at.
+   */
+  const joint = server.userData.joints.find((j) => j.key === 'sled');
+  assert.equal(joint.targets[0].prop, 'position', 'the sled joint must declare a position target');
+  assert.equal(joint.targets[0].axis, 'z');
+
+  const slide = server.getObjectByName('Service_Slide');
+  assert.ok(!slide.userData.rest, 'the slide node must not be explodable');
+
+  // Drive it shut first rather than reading whatever the authored pose is: this subject ships
+  // OPEN, so the rest position is not the closed one and assuming it was is how this check
+  // measured a 0.20 m travel on a 0.62 m slide.
+  setPose(server, { sled: 0 });
+  const closed = slide.position.z;
+  setPose(server, { sled: SDIM.service.travel });
+  assert.ok(Math.abs(slide.position.z - closed - SDIM.service.travel) < 1e-9,
+    'the sled did not travel its declared distance');
+  // Out far enough to actually expose the board it exists to expose.
+  assert.ok(SDIM.service.travel > SDIM.service.board.depth * 0.8,
+    'the travel is shorter than the board — nothing useful is revealed');
+  setPose(server, { sled: 0 });
+  assert.equal(Number(slide.position.z.toFixed(9)), Number(closed.toFixed(9)));
+});
+
+test('[server] the light accents and buttons are on the channels they claim', () => {
+  // Green accents in the manner of the MK-CX's lift emitters, a red emergency stop, blue port
+  // rows and a hot die. Four channels, which is the encoding's ceiling.
+  const expect = [
+    ['SledLights_Instanced', EMISSIVE.tertiary],
+    ['Service_Sled_Lights', EMISSIVE.tertiary],
+    ['Start_Ring_1', EMISSIVE.tertiary],
+    ['Button_EPO', EMISSIVE.quaternary],
+    ['SW_A_Ports', EMISSIVE.secondary],
+    ['IC_Die', EMISSIVE.primary],
+  ];
+  for (const [name, channel] of expect) {
+    const node = server.getObjectByName(name);
+    assert.ok(node, `missing ${name}`);
+    assert.equal(node.userData.emissive, channel, `${name} is on the wrong accent channel`);
+    assert.equal(node.geometry.getAttribute('emissive').array[0], channel,
+      `${name} carries no emissive vertex attribute`);
+  }
+  // The white buttons deliberately are NOT emissive: the blueprint's paper is itself near-white,
+  // so a white accent is the one colour the schematic cannot show. They read as white in the
+  // game view and as a lit green ring in the schematic.
+  const white = server.getObjectByName('Button_Start_1');
+  assert.equal(white.userData.emissive, EMISSIVE.none,
+    'a white glow is invisible on white paper — the start button must not be an accent');
+});
+
+test('no subject declares an accent channel the G-buffer cannot carry', () => {
+  // The channel travels as `emissive * 0.25` in an 8-bit alpha, so 1..4 come back exactly and a
+  // fifth would clamp into the fourth and render as red with no error anywhere.
+  assert.equal(Math.max(...Object.values(EMISSIVE)), EMISSIVE_MAX);
+  for (const m of MODELS) {
+    m.root.traverse((o) => {
+      if (!o.isMesh || o.userData.isCollision) return;
+      const chan = o.userData.emissive || 0;
+      assert.ok(chan <= EMISSIVE_MAX,
+        `[${m.name}] ${o.name} is on channel ${chan}, past the encoding's ${EMISSIVE_MAX}`);
+    });
+  }
+});
+
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
@@ -1287,7 +1457,7 @@ console.log('\nasset / display boundary');
 
 test('asset code never imports from display code', () => {
   const offenders = [];
-  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'robotarm', 'gimbal', 'howitzer'].map((d) => join(ROOT, 'src', d));
+  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'robotarm', 'gimbal', 'server', 'howitzer'].map((d) => join(ROOT, 'src', d));
   for (const file of assetDirs.flatMap(walk)) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
@@ -1318,7 +1488,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="846f7816">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="ceb25b9d">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

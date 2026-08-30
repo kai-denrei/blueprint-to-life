@@ -40,5 +40,19 @@ export function createMaterials() {
       name: 'M_Glow2', color: 0x18242e, roughness: 0.4, metalness: 0.0,
       emissive: 0x2fb6ff, emissiveIntensity: 2.4, flatShading: true,
     }),
+    glow3: new THREE.MeshStandardMaterial({
+      name: 'M_Glow3', color: 0x142a1c, roughness: 0.4, metalness: 0.0,
+      emissive: 0x3ee07f, emissiveIntensity: 2.4, flatShading: true,
+    }),
+    glow4: new THREE.MeshStandardMaterial({
+      name: 'M_Glow4', color: 0x2a1512, roughness: 0.4, metalness: 0.0,
+      emissive: 0xff5236, emissiveIntensity: 2.6, flatShading: true,
+    }),
+    // Plain white, for the one thing the schematic cannot say with an accent channel: the
+    // blueprint's paper IS near-white, so a white glow is invisible on it. An illuminated
+    // button therefore reads as white in the game view and as a lit RING in the schematic.
+    white: new THREE.MeshStandardMaterial({
+      name: 'M_White', color: 0xe6e9ec, roughness: 0.45, metalness: 0.05, flatShading: true,
+    }),
   };
 }
