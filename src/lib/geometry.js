@@ -355,3 +355,101 @@ export function crownedTyre({ radius, thickness, width, crown, segments = 72, cr
   geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
   return finish(geom);
 }
+
+/**
+ * A corrugated sheet: the folded trapezoidal panel a shipping container is made of.
+ *
+ * Built in the XY plane — `length` along X, `height` along Y — with the fold displacing along
+ * Z between 0 and `depth`. The sheet is SOLID: an outer surface, an inner surface offset by
+ * `thickness`, and closed top, bottom and end edges.
+ *
+ * That solidity is the whole reason this is not a one-sided strip. The blueprint pass renders
+ * with `side: DoubleSide`, so a container built from planes looks perfect in the schematic and
+ * you can see straight out through the back wall the moment anyone switches to the game view.
+ * A wall that is a real sheet works in both modes and needs nothing from either renderer —
+ * which is the same argument the emissive attribute makes about not living in a material.
+ *
+ * `extrudeProfile` cannot do this: a corrugation is a deeply non-convex profile, and that
+ * generator fans its caps from vertex 0 on the assumption of convexity. Here the caps are strips
+ * between two copies of the profile rather than a fan over one, which is what removes the
+ * assumption.
+ *
+ * The inner surface is offset in Z rather than along the surface normal, so the diagonals are
+ * fractionally thicker than the flats. That is what a press brake does to sheet anyway, and it
+ * keeps the two surfaces sharing a profile — worth stating rather than pretending otherwise.
+ *
+ * @param {object} opts
+ * @param {number} opts.length      extent along X, centred on 0
+ * @param {number} opts.height      extent along Y, centred on 0
+ * @param {number} opts.thickness   sheet thickness
+ * @param {number} opts.pitch       one full fold; should divide `length` — see `foldPitch`
+ * @param {number} opts.depth       fold depth along Z
+ * @param {number} [opts.crest=0.32] flat crest, as a fraction of the pitch
+ * @param {number} [opts.trough=0.32] flat trough, as a fraction of the pitch
+ */
+export function corrugatedPanel({
+  length, height, thickness, pitch, depth, crest = 0.32, trough = 0.32,
+}) {
+  const a = pitch * crest;
+  const c = pitch * trough;
+  const b = (pitch - a - c) / 2;
+  const n = Math.max(1, Math.round(length / pitch));
+  const hy = height / 2;
+
+  // The fold profile, as [x, z] along the panel. Ends on a crest so a run of panels butts
+  // together without a half fold at the seam.
+  const prof = [];
+  for (let i = 0; i < n; i++) {
+    const x0 = -length / 2 + i * pitch;
+    prof.push([x0, depth], [x0 + a, depth], [x0 + a + b, 0], [x0 + a + b + c, 0]);
+  }
+  prof.push([length / 2, depth]);
+
+  const pos = [], uv = [];
+  const P = (x, y, z) => [x, y, z];
+  const quad = (p0, p1, p2, p3, u0, u1) => {
+    tri(pos, uv, p0, p1, p2, [u0, 0], [u1, 0], [u1, 1]);
+    tri(pos, uv, p0, p2, p3, [u0, 0], [u1, 1], [u0, 1]);
+  };
+
+  for (let i = 0; i < prof.length - 1; i++) {
+    const [x0, z0] = prof[i], [x1, z1] = prof[i + 1];
+    const u0 = i / (prof.length - 1), u1 = (i + 1) / (prof.length - 1);
+
+    // Outer face, +Z.
+    quad(P(x0, -hy, z0), P(x1, -hy, z1), P(x1, hy, z1), P(x0, hy, z0), u0, u1);
+    // Inner face, reversed so it faces -Z.
+    quad(P(x0, hy, z0 - thickness), P(x1, hy, z1 - thickness),
+      P(x1, -hy, z1 - thickness), P(x0, -hy, z0 - thickness), u0, u1);
+    // Top and bottom edges, closing the sheet along its length.
+    quad(P(x0, hy, z0), P(x1, hy, z1), P(x1, hy, z1 - thickness), P(x0, hy, z0 - thickness), u0, u1);
+    quad(P(x0, -hy, z0 - thickness), P(x1, -hy, z1 - thickness),
+      P(x1, -hy, z1), P(x0, -hy, z0), u0, u1);
+  }
+
+  // The two end caps.
+  for (const [idx, sign] of [[0, -1], [prof.length - 1, 1]]) {
+    const [x, z] = prof[idx];
+    const p = [
+      P(x, -hy, z), P(x, hy, z), P(x, hy, z - thickness), P(x, -hy, z - thickness),
+    ];
+    if (sign < 0) quad(p[0], p[1], p[2], p[3], 0, 1);
+    else quad(p[3], p[2], p[1], p[0], 0, 1);
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return finish(geom);
+}
+
+/**
+ * A fold pitch that divides a panel exactly.
+ *
+ * A corrugated wall that ends on a half fold is a wall nobody pressed. Snapping the pitch to the
+ * nearest whole count is one line, and it makes the corrugation a consequence of the panel's
+ * size rather than a number that happens to look right at one length.
+ */
+export function foldPitch(length, nominal) {
+  return length / Math.max(1, Math.round(length / nominal));
+}

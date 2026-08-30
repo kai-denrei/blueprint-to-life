@@ -25,6 +25,12 @@ import { buildHeadless, updateHeadlessStance } from '../src/headless/buildHeadle
 import { buildMotopod, updateMotopodRide } from '../src/motopod/buildMotopod.js';
 import { buildRobotArm, updateRobotArmAim } from '../src/robotarm/buildRobotArm.js';
 import { RADIM, aimIsAlwaysReachable, solveAim } from '../src/robotarm/dimensions.js';
+import { buildContainer } from '../src/container/buildContainer.js';
+import {
+  CDIM, cargoEnvelope, castingLayout, interiorHeight, interiorLength, interiorWidth, leafWidth,
+  loadFits, palletLayout,
+} from '../src/container/dimensions.js';
+import { foldPitch } from '../src/lib/geometry.js';
 import { buildServer } from '../src/server/buildServer.js';
 import {
   SDIM, elevationCoverage, fieldHeight, overallHeight as rackHeight, sledSlots, spanCentreY,
@@ -56,6 +62,7 @@ const motopod = buildMotopod();
 const robotarm = buildRobotArm();
 const gimbal = buildGimbal();
 const server = buildServer();
+const container = buildContainer();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -194,6 +201,18 @@ const MODELS = [
                'Button_EPO', 'Button_Start_1', 'Door_Front_Pivot', 'Door_Rear_Pivot',
                'Fan_1_Spin', 'Fan_1_Rotor'],
     pivots: ['Door_Front_Pivot', 'Door_Rear_Pivot', 'Service_Slide', 'Fan_1_Spin', 'Fan_6_Spin'],
+  },
+  {
+    // A container, doors open: the first subject you look INTO. Its required list names one
+    // panel from each wall and the whole door chain, because "it is a hollow box with real
+    // sheet for walls" is this subject's equivalent of "the running gear is instanced".
+    name: 'container', root: container, rootName: 'Container_Root',
+    collision: 'Container_Collision', instancedGear: 'Pallets_Instanced', armed: false,
+    required: ['Frame_Group', 'Shell_Group', 'Floor_Group', 'Details_Group', 'Container_Collision',
+               'Wall_L', 'Wall_R', 'Wall_Front', 'Roof_Mesh', 'Floor_Deck', 'Underframe_Mesh',
+               'Casting_TFL', 'Casting_BRR', 'Post_FL', 'Door_L_Pivot', 'Door_R_Pivot',
+               'Door_L_Panel', 'Lock_L1_Rod', 'Lock_R2_Rod', 'Pallets_Instanced'],
+    pivots: ['Door_L_Pivot', 'Door_R_Pivot', 'Lock_L1_Rod', 'Lock_R2_Rod'],
   },
   {
     name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', instancedGear: 'Wheels_Instanced', armed: true,
@@ -1415,6 +1434,177 @@ test('no subject declares an accent channel the G-buffer cannot carry', () => {
   }
 });
 
+console.log('\nthe container — a hollow box, and a shape agreed on by everybody');
+
+test('[container] the envelope is ISO 668 1CC', () => {
+  /**
+   * A container that stopped fitting a spreader is not a container. Measured on the built
+   * vertices, so a corrugation bulging past the envelope fails here rather than at a port.
+   *
+   * In the SHIPPING configuration, which is the only one the envelope is a claim about: doors
+   * closed and cam handles stowed. Swinging a handle out to unlock it reaches past the envelope
+   * on a real container too, and it is not in a cell guide while you are doing that.
+   */
+  setPose(container, { doorL: 0, doorR: 0, locks: 0 });
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  container.traverse((o) => {
+    if (!o.isMesh || o.userData.isCollision) return;
+    const pos = o.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) box.expandByPoint(v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld));
+  });
+  const got = { width: box.max.x - box.min.x, height: box.max.y, length: box.max.z - box.min.z };
+  for (const key of ['width', 'height', 'length']) {
+    assert.ok(Math.abs(got[key] - CDIM.iso[key]) < 0.004,
+      `${key}: ISO says ${CDIM.iso[key]}, the graph is ${got[key].toFixed(4)}`);
+  }
+  setPose(container, CDIM.rest);
+});
+
+test('[container] eight ISO 1161 castings, one at each corner of that envelope', () => {
+  // Their entire specification is where they are: a spreader finds them by geometry.
+  const layout = castingLayout();
+  assert.equal(layout.length, 8);
+  container.updateMatrixWorld(true);
+  for (const c of layout) {
+    const node = container.getObjectByName(c.name);
+    assert.ok(node, `missing ${c.name}`);
+    const p = node.getWorldPosition(new THREE.Vector3());
+    // The casting's far face is flush with the envelope on all three axes.
+    assert.ok(Math.abs(Math.abs(p.x) + CDIM.iso.casting.width / 2 - CDIM.iso.width / 2) < 1e-6);
+    assert.ok(Math.abs(Math.abs(p.z) + CDIM.iso.casting.length / 2 - CDIM.iso.length / 2) < 1e-6);
+    const y = c.sy < 0 ? CDIM.iso.casting.height / 2 : CDIM.iso.height - CDIM.iso.casting.height / 2;
+    assert.ok(Math.abs(p.y - y) < 1e-6, `${c.name} is off the corner vertically`);
+  }
+});
+
+test('[container] the walls are real sheets, not planes', () => {
+  /**
+   * The finding that shaped this subject.
+   *
+   * The blueprint pass renders with `side: THREE.DoubleSide`, so a container built from
+   * single-sided planes looks perfect in the schematic — and the game view, whose standard
+   * materials cull back faces, shows straight out through the back of it. The two display modes
+   * would disagree about whether the box has walls, and only one of them would say so.
+   *
+   * A sheet with real thickness works in both and asks nothing of either renderer. This checks
+   * the geometry rather than the render: every wall's thinnest dimension is at least the
+   * declared sheet thickness plus its fold depth, which a plane cannot be.
+   */
+  const C = CDIM.corrugation;
+  for (const [name, minThickness] of [
+    ['Wall_L', C.thickness + C.depth], ['Wall_R', C.thickness + C.depth],
+    ['Wall_Front', C.thickness + C.depth], ['Roof_Mesh', C.thickness + C.roofDepth],
+    ['Door_L_Panel', CDIM.door.thickness + CDIM.door.depth],
+  ]) {
+    const g = container.getObjectByName(name).geometry;
+    g.computeBoundingBox();
+    const s = g.boundingBox.getSize(new THREE.Vector3());
+    const thinnest = Math.min(s.x, s.y, s.z);
+    assert.ok(thinnest >= minThickness - 1e-6,
+      `${name} is ${thinnest.toFixed(4)} m thick — a plane, not a sheet`);
+  }
+});
+
+test('[container] every corrugated panel ends on a whole fold', () => {
+  // A wall that ends on a half fold is a wall nobody pressed. The pitch is snapped per panel,
+  // which is why the side, end and door pitches are three different numbers.
+  const C = CDIM.corrugation;
+  const cases = [
+    ['side', CDIM.iso.length - 2 * CDIM.frame.postDepth, C.nominal],
+    ['end', CDIM.iso.width - 2 * CDIM.frame.post, C.nominal],
+    ['roof', CDIM.iso.width - 2 * CDIM.frame.post, C.roofNominal],
+    ['door', leafWidth(), CDIM.door.nominal],
+  ];
+  const pitches = new Set();
+  for (const [label, length, nominal] of cases) {
+    const pitch = foldPitch(length, nominal);
+    const folds = length / pitch;
+    assert.ok(Math.abs(folds - Math.round(folds)) < 1e-9,
+      `${label}: ${folds.toFixed(4)} folds is not a whole number`);
+    assert.ok(Math.round(folds) >= 3, `${label}: ${Math.round(folds)} folds is not a corrugation`);
+    pitches.add(pitch.toFixed(6));
+  }
+  assert.ok(pitches.size > 1, 'every panel got the same pitch — the snap is not being applied');
+});
+
+/** Is a world point inside the space the freight occupies? */
+function inCargoSpace(v) {
+  const e = cargoEnvelope();
+  return Math.abs(v.x) < e.halfWidth && v.z > e.zMin && v.z < e.zMax
+    && v.y > e.floor + 0.01 && v.y < e.floor + e.height;
+}
+
+test('[container] nothing structural reaches into the cargo space', () => {
+  /**
+   * Tested against the CARGO envelope, not the clear interior.
+   *
+   * The first version used the full interior prism and flagged the four top corner castings and
+   * both open door leaves — all of which are exactly where they belong. A container's usable
+   * space has fittings in its corners and stops short of the door opening; the prism drawn
+   * right into the corners is a number for a brochure, not a volume anything sits in.
+   */
+  setPose(container, CDIM.rest);
+  const v = new THREE.Vector3();
+  const allowed = /^(Pallets_Instanced|Loads_Instanced|Floor_Strip_|Floor_Deck)/;
+  const intruders = new Set();
+  container.traverse((o) => {
+    if (!o.isMesh || o.userData.isCollision || allowed.test(o.name)) return;
+    const pos = o.geometry.getAttribute('position');
+    for (let i = 0; i < pos.count; i++) {
+      if (inCargoSpace(v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld))) {
+        intruders.add(o.name);
+        break;
+      }
+    }
+  });
+  assert.deepEqual([...intruders], [], `these reach into the cargo space: ${[...intruders].join(', ')}`);
+});
+
+test('[container] the unit load fits the clear interior', () => {
+  // Eight pallets on a grid, and the grid is the format's whole point — so whether they fit is
+  // a property of the derivation, not of how they were placed.
+  const f = loadFits();
+  assert.equal(palletLayout().length, CDIM.interior.pallet.cols * CDIM.interior.pallet.rows);
+  assert.ok(f.width < interiorWidth(), `load is ${f.width.toFixed(3)} wide, interior ${interiorWidth().toFixed(3)}`);
+  assert.ok(f.length < interiorLength(), `load is ${f.length.toFixed(3)} long, interior ${interiorLength().toFixed(3)}`);
+  assert.ok(f.height < interiorHeight(), `load is ${f.height.toFixed(3)} tall, interior ${interiorHeight().toFixed(3)}`);
+});
+
+test('[container] the doors fold back alongside the box, not through it', () => {
+  /**
+   * 268 degrees, not 90 — a container door folds all the way round so a forklift can reach the
+   * opening. Two things have to be true of that and only the second is obvious: the leaf must
+   * not pass through the cargo space on its way, and at full open its free edge must actually
+   * be BEHIND the opening rather than still standing across it.
+   *
+   * The hinge end of an open leaf is legitimately inside the box's x-footprint — the hinge is
+   * inboard of the corner post — so a test on the footprint alone flags a door that is doing
+   * exactly the right thing.
+   */
+  const v = new THREE.Vector3();
+  for (const pose of [{ doorL: 0, doorR: 0 }, { doorL: 90, doorR: 90 },
+                      { doorL: CDIM.door.open, doorR: CDIM.door.open }, CDIM.rest]) {
+    setPose(container, pose);
+    for (const tag of ['L', 'R']) {
+      const panel = container.getObjectByName(`Door_${tag}_Panel`);
+      const pos = panel.geometry.getAttribute('position');
+      let intrudes = 0, tipZ = Infinity;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(panel.matrixWorld);
+        if (inCargoSpace(v)) intrudes++;
+        tipZ = Math.min(tipZ, v.z);
+      }
+      assert.equal(intrudes, 0, `door ${tag} at ${JSON.stringify(pose)} sweeps through the cargo`);
+      if (pose.doorL === CDIM.door.open) {
+        assert.ok(tipZ < CDIM.iso.length / 2 - 1.0,
+          `door ${tag} at full open still reaches z=${tipZ.toFixed(2)} — it has not folded back`);
+      }
+    }
+  }
+  setPose(container, CDIM.rest);
+});
+
 test('[tank] road wheel count matches the declared layout', () => {
   assert.equal(byName('Wheels_Instanced').count, DIM.roadWheel.count * 2);
 });
@@ -1457,7 +1647,7 @@ console.log('\nasset / display boundary');
 
 test('asset code never imports from display code', () => {
   const offenders = [];
-  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'robotarm', 'gimbal', 'server', 'howitzer'].map((d) => join(ROOT, 'src', d));
+  const assetDirs = ['lib', 'tank', 'mkcx', 'heptat', 'heptapod', 'headless', 'motopod', 'robotarm', 'gimbal', 'server', 'container', 'howitzer'].map((d) => join(ROOT, 'src', d));
   for (const file of assetDirs.flatMap(walk)) {
     const src = readFileSync(file, 'utf8');
     for (const m of src.matchAll(/from\s+['"]([^'"]+)['"]/g)) {
@@ -1488,7 +1678,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="ceb25b9d">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="3d12ccc0">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

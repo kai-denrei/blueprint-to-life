@@ -3,11 +3,12 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Ten subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
+Eleven subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
 **Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
 (a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, the **RA-6** six-axis
-robot arm, the **GS-3** three-axis gimbal platform, **SERVER01** (a 42U compute rack), and an
-M777-pattern 155 mm towed howitzer — plus a primitives rig for debugging the shader.
+robot arm, the **GS-3** three-axis gimbal platform, **SERVER01** (a 42U compute rack), the
+**CX-20** intermodal container, and an M777-pattern 155 mm towed howitzer — plus a primitives
+rig for debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -44,6 +45,9 @@ npm start             # http://127.0.0.1:5173/
 - `/?subject=server` — SERVER01, a 42U compute rack: 28 instanced sleds on the EIA-310 grid,
   one pulled out on a slide to expose its board and package, a rear fan door, and green light
   accents in the manner of the MK-CX's lift emitters
+- `/?subject=container` — CX-20, a 20 ft ISO 668 intermodal container with its doors folded
+  back: corrugated sheet walls, eight ISO 1161 corner castings, cam-lock rods, and a lit
+  interior carrying eight unit loads
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -103,6 +107,7 @@ src/motopod/    asset: Moto // Pod
 src/robotarm/   asset: RA-6 articulated arm
 src/gimbal/     asset: GS-3 gimbal platform
 src/server/     asset: SERVER01 compute rack
+src/container/  asset: CX-20 intermodal container
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -113,8 +118,8 @@ server/serve.js static server with the cache-control split the busting layer nee
 ```
 
 Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/headless`,
-`src/motopod`, `src/robotarm`, `src/gimbal`, `src/server`, `src/howitzer`) must not import
-from display code, and
+`src/motopod`, `src/robotarm`, `src/gimbal`, `src/server`, `src/container`, `src/howitzer`)
+must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -659,6 +664,68 @@ middle of a turned component that has none.
 now it holds the node *name*, because the check hardcoded `Wheels_Instanced` and a rack has no
 version of that noun. Twice a vehicle assumption has been filed off this flag, and both times the
 fix was to let the subject say what it has instead of the checklist guessing.
+
+### What the container cost: a hollow box that both renderers agree on
+
+The CX-20 is the eleventh subject and the first you look INTO rather than at. That turns out to
+be a modelling constraint rather than a framing choice, and finding out why is the interesting
+part.
+
+**The two display modes disagree about back faces.** The blueprint pass renders the whole scene
+with `side: THREE.DoubleSide`, so a container whose walls were single-sided planes would look
+completely correct in the schematic — and you would see straight out through the back of it the
+moment anyone pressed GAME / PBR, where the standard materials cull. One mode would have hidden
+the bug the other showed.
+
+So the walls are real sheets with thickness, which needed the one new generator:
+`corrugatedPanel`, a solid folded sheet with an outer surface, an inner surface and closed
+edges. `extrudeProfile` could not do it — a corrugation is about as non-convex as a profile
+gets, and that generator fans its caps on an assumption of convexity. Neither renderer changed.
+There is an invariant that measures each wall's thinnest dimension, because "it is a sheet, not
+a plane" is exactly the sort of thing that survives a refactor by accident.
+
+**The fold pitch is derived per panel.** A wall that ends on a half fold is a wall nobody
+pressed, so `foldPitch` snaps the pitch to divide its panel exactly — which is why the side, end,
+roof and door pitches are four different numbers rather than one taste.
+
+#### The standard is the design, and it caught three errors
+
+ISO 668 fixes a 1CC at 6.058 × 2.438 × 2.591 m and ISO 1161 fixes the corner castings. Those are
+not styling; they are the reason the format works, and a futuristic container that stopped
+fitting a spreader would have thrown the brief away. The envelope is measured on the built
+vertices — and it failed three times, each for a real reason:
+
+- **The casting lock lamps stood 8 mm proud of the top castings.** Anything above them is what
+  the next container down the stack lands on. They are recessed flush now.
+- **The telemetry panel and readout stood 34 mm past the front face**, mounted on the outside of
+  the corrugation rather than in it. A fitting outside the envelope is a fitting a cell guide
+  shears off.
+- **The cam-rod hardware stood 66 mm proud of the door end even stowed.** The leaves are
+  recessed behind the corner posts now. The envelope test runs in the *shipping* configuration —
+  doors closed, handles stowed — because that is the only configuration the envelope is a claim
+  about; a real cam handle swings outside it while you are unlocking, and the box is not in a
+  cell guide while you do that.
+
+A fourth came from the interior. The clear internal length first came out 5.75 m against a real
+1CC's 5.90, because the derivation subtracted the corner posts as well as the sheet — but the
+corrugation bulges *outward*, so the interior boundary is the trough and the post sits behind
+the wall rather than inside it. Corrected, the internal volume lands at 33.9 m³ against a real
+20 ft's ~33.1.
+
+#### Two invariants that were asking the wrong question
+
+The interior checks were first written against the clear internal prism, and they flagged the
+four top corner castings and both open door leaves — all of which are exactly where they belong.
+A container's usable space has fittings in its corners and stops short of the door opening; the
+prism drawn right into the corners is a number for a brochure, not a volume anything sits in.
+Both tests moved to a **cargo envelope** derived from where the unit load actually sits.
+
+That reframing then found a real fault. With the leaves hinged on the corner posts' *inner*
+edge, a door folded back to 262° ended up inside the box's own footprint. A container door hangs
+near the post's outer face and is wide enough that the two leaves meet on the centreline — which
+is what lets it close *over* its frame and, folded back, lie outside the side wall. The load also
+moved forward on the deck, because freight is loaded from the front and the last row was sitting
+under the folded-back hardware.
 
 #### One change in display code
 
