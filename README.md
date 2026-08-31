@@ -3,12 +3,12 @@
 Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
 blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
 
-Eleven subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
+Twelve subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
 **Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
 (a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, the **RA-6** six-axis
 robot arm, the **GS-3** three-axis gimbal platform, **SERVER01** (a 42U compute rack), the
-**CX-20** intermodal container, and an M777-pattern 155 mm towed howitzer — plus a primitives
-rig for debugging the shader.
+**CX-20** intermodal container, the **FD-4** additive fabrication drone, and an M777-pattern
+155 mm towed howitzer — plus a primitives rig for debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -48,6 +48,10 @@ npm start             # http://127.0.0.1:5173/
 - `/?subject=container` — CX-20, a 20 ft ISO 668 intermodal container with its doors folded
   back: corrugated sheet walls, eight ISO 1161 corner castings, cam-lock rods, and a lit
   interior carrying eight unit loads
+- `/?subject=fabricator` — FD-4, an additive fabrication drone printing a pier below itself:
+  four rotor masts and four antigravity emitters, a ram-fed 27.6 L reservoir, a cranked print
+  boom, and no position control at all — where it hovers is derived from how much feedstock it
+  has already spent
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -108,6 +112,7 @@ src/robotarm/   asset: RA-6 articulated arm
 src/gimbal/     asset: GS-3 gimbal platform
 src/server/     asset: SERVER01 compute rack
 src/container/  asset: CX-20 intermodal container
+src/fabricator/ asset: FD-4 fabrication drone (and the pier it is printing)
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -118,8 +123,8 @@ server/serve.js static server with the cache-control split the busting layer nee
 ```
 
 Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/headless`,
-`src/motopod`, `src/robotarm`, `src/gimbal`, `src/server`, `src/container`, `src/howitzer`)
-must not import from display code, and
+`src/motopod`, `src/robotarm`, `src/gimbal`, `src/server`, `src/container`, `src/fabricator`,
+`src/howitzer`) must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -177,6 +182,15 @@ Subjects may also declare `afterArticulate(root)` for fix-ups the scene graph ca
 The howitzer needs one: its two road wheels are a single `InstancedMesh` (the same contract the
 tank's running gear follows) but they are mounted on two independently hinging trails, and
 instance matrices cannot be inherited from different parents.
+
+The FD-4 added the display-side twin of that, `derived(jointValues)` — a map of extra readouts a
+subject computes rather than reads off a slider. Same shape of hook and the same justification:
+`afterArticulate` exists for a fact about the machine a tree of rotations cannot carry, and this
+one for a fact a slider value cannot carry. That drone's most interesting figures — metres of
+bead on the bed, courses finished — are functions of CHARGE with no control of their own, and a
+panel quoting a build-time constant for them would have been lying by the second frame. `main.js`
+merges a map of strings and a subject that declares no hook loses nothing, so it stays as
+ignorant of what it is drawing as the joint list leaves it.
 
 ## How the blueprint pass works
 
@@ -737,6 +751,125 @@ reads `userData.isCollision` instead, which is the actual contract and is what t
 suite has always asserted. Same argument as the subject registry replacing a hardcoded list of
 ids: a menu is not a reason for the viewer to know what it is drawing.
 
+### What the drone changed: the machine's position stopped being an input
+
+The twelfth subject is the first that brings something with it. Every one before it was a
+machine and nothing else — the tank is a tank, the rack is a rack, and even the container, which
+you look *into*, is only ever the box. The FD-4 is a machine plus **the thing it made**: a
+printed pier standing on the bed underneath it. Two questions fall out of that which the project
+had never had to answer.
+
+**Where does the work live in the graph?** Not under the nozzle. Material that has left the
+extruder belongs to the ground, so `Workpiece_Group` is a *sibling* of the airframe rather than a
+child of the head — parent it to the head and the pier flies away with the drone the first time
+anything moves. That one decision is what makes the rest of the subject possible, and there is an
+invariant that checks it both structurally (the work is not under the platform) and behaviourally
+(moving the machine does not move the bead).
+
+**Who commands the drone's position?** Nothing does, and that is the subject.
+
+The RA-6 made the sliders stop being the axes: you tell the head where to look, and two of its
+six axes are solved to hold that aim while the rest of the arm moves. This goes one step further
+and removes the command as well. The nozzle has to be over the next segment of bead to be laid;
+*which* segment that is follows from how much feedstock has left the tank; so the machine's
+position in space is a function of one number, CHARGE, and there is no slider for X, Y or Z
+anywhere in the panel. Drag the reservoir from full to empty and the drone walks itself around
+the pier and climbs it, course by course, laying the bead as it goes.
+
+It can do that for a reason the arm could not. An arm is bolted to a floor, so the only thing it
+has to spend on holding a target is its own joints, and it runs out of them — which is why the
+RA-6's declared travel is a *paired* constraint with an invariant behind it. This machine is
+bolted to nothing. Its three spare degrees of freedom are the free-flying root itself, so the
+solve is a subtraction rather than an inverse:
+
+```js
+platform.position.set(0, 0, 0);
+root.updateMatrixWorld(true);
+const at = root.worldToLocal(tip.getWorldPosition(new THREE.Vector3()));
+platform.position.set(target.x - at.x, target.y - at.y, target.z - at.z);
+```
+
+No trigonometry, no iteration, no unreachable corner to be honest about — and idempotent,
+because it recomputes from zero rather than accumulating onto what it wrote last frame. Over the
+whole charge range and the full boom envelope the orifice lands on the work to within 1e-9 m.
+That number is in a test, not in this paragraph.
+
+The three boom sliders are still real axes, still driven directly, and what they change now is
+the machine's *attitude* relative to the work rather than the nozzle's position: swing BOOM YAW
+and the whole airframe slides across the pier to keep the tip where it has to be. An invariant
+states it as the difference it makes — the same slider that would move the tool on any other
+subject moves the airframe by more than 100 mm here, while the tool does not move at all.
+
+#### The reservoir is sized by the job
+
+Nothing about the bead is decorative. The pier's plan and course count are the design; everything
+else is derived from them:
+
+| figure | where it comes from |
+|---|---|
+| bead section, 40 × 20 mm | chosen — the only free number in the chain |
+| course perimeter, 1.440 m | `4 × (outer − bead width)`, the wall being one bead thick |
+| segment, 90 mm | perimeter ÷ 16, so no course ends on a partial segment |
+| capacity, 27.648 L | course volume × 24 courses — *a tankful is exactly the pier* |
+| barrel length, 483 mm | capacity ÷ π r², solved rather than typed |
+
+That last row is the point of the arrangement. Typing a length in one place and a capacity in
+another is how the two quietly stop agreeing; here a change to the pier's plan moves the
+reservoir's dimensions, the title block, and the drone's whole itinerary together. An invariant
+measures conservation on the built geometry rather than asserting it: at each charge, count the
+bead segments the graph is actually drawing, multiply by the section, and compare against what is
+missing from the tank. They agree to within one segment, which is the quantisation deposition
+itself has — the bead is laid in discrete chunks, and the readout says so rather than claiming a
+precision the geometry does not have.
+
+#### Two things the reference sheet asked for that the geometry would not give
+
+**One continuous hose.** The art runs a single feed line from the reservoir all the way to the
+nozzle, and this is the one thing on it the subject refuses to build. There is no skinning
+anywhere in this project — `cableRun` carries that constraint in its own docstring — so a run
+authored across a driven pivot tears open the first time the slider moves. The fix is not a
+renderer feature; it is how a real machine is dressed: break the line at every joint and put a
+rotary coupling there. Three runs, two couplings, each entirely inside one rigid frame, and it
+survives the whole envelope. The invariant checks the *break* rather than the hose — consecutive
+runs must be separated by at least one driven node, or they are one hose pretending to be three.
+
+**An exposed power core.** The first pass put the lit barrel inside the hull, where "exposed" was
+a claim no view of the machine could check: it rendered as nothing at all, from all six views.
+Slinging it under the belly and forward of the boom's yaw axis makes the word true from the
+front, the side and the iso, which is the only sense in which a drawing can mean it.
+
+#### Two smaller things the build turned up
+
+**A dead control that looked like a working one.** The boom hung straight down from its own yaw
+axis, so BOOM YAW rotated the head about its own centreline and moved nothing whatever. The
+slider was there, the readout changed, and the drawing did not. Cranking the head 170 mm forward
+of the axis gives the yaw a radius to swing through — which is what a real swing-arm machine has,
+for exactly this reason — and the invariant above now measures that the slider moves the
+airframe, so a future edit cannot quietly straighten it out again.
+
+**A pier that did not look printed.** The bead was laid as a plain box, and butted boxes share
+coplanar faces and a single part id, so the outline filter found nothing between them: twenty-four
+courses rendered as one solid wall. A real extruded bead is a squashed round — full width at
+mid-height, pinched top and bottom — and giving it that section turns each course interface into
+a re-entrant groove the normal-discontinuity term picks up. Layer lines, out of geometry, with
+nothing asked of either renderer. The same argument the container's walls made about being real
+sheets rather than planes, arriving from the opposite direction.
+
+#### What the instanced flag has now had filed off it three times
+
+`instancedGear` names `Bead_Instanced` on this subject, and that is the third assumption the flag
+has shed. It was `wheels` until the Moto // Pod (which is mostly wheels and instances none of
+them); it became a node *name* rather than `true` for SERVER01 (whose repeated part is
+twenty-eight compute sleds, not running gear); and here the repeated part is not a component of
+the machine at all, or even in its hierarchy. What the flag has always meant is "the repeated
+thing is one InstancedMesh", and a printed pier is the cleanest case of that yet — every segment
+really is one static transform of one identical extrusion, which is the exact test the walker set
+when it declined to instance its feet.
+
+Cutting `count` back to what has been extruded, rather than hiding the rest by scaling or moving
+it, has a side effect worth keeping: an instance past `count` is neither drawn nor submitted, so
+the TRIANGLES readout falls as the tank refills. The instrumentation shows the print happening.
+
 ## Deployed
 
 Live at **https://kai-denrei.github.io/blueprint-to-life/** — GitHub Pages, straight from
@@ -790,7 +923,9 @@ armament must not still be carrying a breech.
 The first flag was called `wheels` until the Moto // Pod, which made the name undeniably wrong:
 that subject is *mostly* wheels and instances none of them. It had never meant "has wheels" —
 the walker set it false with eight legs — it meant "the running gear is one InstancedMesh". Now
-it says so.
+it says so. SERVER01 then made it hold a node name rather than `true`, and the FD-4 pointed that
+name at something outside the machine's hierarchy altogether. Three times the fix was to make the
+subject state what it has, rather than the checklist guess.
 
 For anything needing a live WebGL context there is a headless harness that drives Chrome over
 CDP using nothing but Node's built-in WebSocket:

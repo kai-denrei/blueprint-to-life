@@ -187,6 +187,18 @@ function updateReadouts(dt) {
 
   chrome.setReadouts({
     ...jointReadouts,
+    /**
+     * Readouts a subject computes rather than reads off a slider.
+     *
+     * The same shape of hook as `afterArticulate`, on the display side: that one exists for a
+     * fact about the machine a tree of rotations cannot carry, this one for a fact about it a
+     * slider value cannot carry. The FD-4 needed it because its most interesting figures —
+     * metres of bead on the bed, courses finished — are derived from CHARGE and have no control
+     * of their own, and a panel that quoted a build-time constant for them would be lying by
+     * the second frame. main.js still knows nothing about any subject: it merges a map of
+     * strings, and a subject that declares no hook loses nothing.
+     */
+    ...(subject.derived?.(jointValues) || {}),
     explode: state.explode.toFixed(2),
     view: VIEWS[views.viewKey].label,
     mode: state.mode === 'pbr' ? 'GAME / PBR' : 'BLUEPRINT',

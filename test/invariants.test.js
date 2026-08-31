@@ -25,6 +25,12 @@ import { buildHeadless, updateHeadlessStance } from '../src/headless/buildHeadle
 import { buildMotopod, updateMotopodRide } from '../src/motopod/buildMotopod.js';
 import { buildRobotArm, updateRobotArmAim } from '../src/robotarm/buildRobotArm.js';
 import { RADIM, aimIsAlwaysReachable, solveAim } from '../src/robotarm/dimensions.js';
+import { buildFabricator, updateFabricatorPose } from '../src/fabricator/buildFabricator.js';
+import {
+  FDIM, beadArea, beadPose, courseVolume, coursePerimeter, legReach, legsClearTheNozzle,
+  nozzleTarget, nozzleTipZ, pierHeight, segmentLength, segmentsLaid, tankCapacity, tankLength,
+  tankLitres, totalSegments,
+} from '../src/fabricator/dimensions.js';
 import { buildContainer } from '../src/container/buildContainer.js';
 import {
   CDIM, cargoEnvelope, castingLayout, interiorHeight, interiorLength, interiorWidth, leafWidth,
@@ -63,6 +69,7 @@ const robotarm = buildRobotArm();
 const gimbal = buildGimbal();
 const server = buildServer();
 const container = buildContainer();
+const fabricator = buildFabricator();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -213,6 +220,33 @@ const MODELS = [
                'Casting_TFL', 'Casting_BRR', 'Post_FL', 'Door_L_Pivot', 'Door_R_Pivot',
                'Door_L_Panel', 'Lock_L1_Rod', 'Lock_R2_Rod', 'Pallets_Instanced'],
     pivots: ['Door_L_Pivot', 'Door_R_Pivot', 'Lock_L1_Rod', 'Lock_R2_Rod'],
+  },
+  {
+    /**
+     * A drone, and the first subject that brings its own work with it. `instancedGear` names the
+     * deposited bead — which is the third time this flag has had an assumption filed off it, and
+     * the most complete one: the repeated part is not running gear, is not a component of the
+     * machine, and is not even part of the machine's own hierarchy. What the flag has always
+     * meant is "the repeated thing is one InstancedMesh", and a printed pier is the cleanest
+     * case of that yet — every segment really is one static transform of one identical box.
+     *
+     * The required list names the whole boom chain down to `Nozzle_Tip`, because the hover solve
+     * reads that node by name and a rename would silently park the machine off the work; and
+     * `Piston_Slide`, because the ram's position IS the charge that everything else is derived
+     * from.
+     */
+    name: 'fabricator', root: fabricator, rootName: 'Fab_Root',
+    collision: 'Airframe_Collision', instancedGear: 'Bead_Instanced', armed: false,
+    required: ['Workpiece_Group', 'Bed_Slab', 'Bead_Instanced', 'Airframe_Platform',
+               'Airframe_Collision', 'Body_Group', 'Hull_Mesh', 'Sensor_Pod', 'Details_Group',
+               'Core_Group', 'Core_Lens', 'Lift_Group', 'Mast_FL', 'Rotor_RR_Blades',
+               'Emitter_FL_Lens', 'Reservoir_Group', 'Tank_Shell', 'Piston_Slide',
+               'Level_Collar', 'Pump_Body', 'Legs_Group', 'Leg_FL_Hip', 'Leg_RR_Pad',
+               'Boom_Yaw', 'Boom_Pitch', 'Boom_Upper', 'Head_Pitch', 'Extruder_Body',
+               'Nozzle_Heater', 'Nozzle_Cone', 'Nozzle_Tip', 'Feed_Line_Body', 'Feed_Line_Boom'],
+    pivots: ['Airframe_Platform', 'Piston_Slide', 'Boom_Yaw', 'Boom_Mount', 'Boom_Pitch',
+             'Head_Pitch', 'Nozzle_Tip', 'Leg_FL_Splay', 'Leg_FL_Hip', 'Leg_RR_Knee',
+             'Rotor_FL_Spin'],
   },
   {
     name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', instancedGear: 'Wheels_Instanced', armed: true,
@@ -1632,6 +1666,254 @@ test('running gear layout is shared, not duplicated', () => {
   assert.equal(layout.filter((c) => c.kind !== 'road').length, 2);
 });
 
+console.log('\nthe drone — it carries what it is going to build, and spends it');
+
+/** Put the FD-4 in a pose through the same path the viewer takes, solve included. */
+function fabPose(values) {
+  setPose(fabricator, values, updateFabricatorPose);
+}
+
+/** Where the orifice actually is, in the root's frame. */
+function nozzleAt() {
+  fabricator.updateMatrixWorld(true);
+  return fabricator.worldToLocal(
+    fabricator.getObjectByName('Nozzle_Tip').getWorldPosition(new THREE.Vector3()));
+}
+
+const FAB_REST = { charge: FDIM.rest.charge * tankLitres(), boomYaw: 0, boomPitch: 0, headPitch: 0 };
+
+test('[fabricator] the reservoir is sized by the job, not by taste', () => {
+  /**
+   * The subject's founding claim: a tankful is exactly the pier. Both halves are derived — the
+   * capacity from the bead and the course, the barrel length from the capacity — so this is a
+   * check that nothing has been typed twice rather than a check on a number.
+   */
+  assert.equal(tankCapacity(), courseVolume() * FDIM.pier.courses);
+  const barrel = Math.PI * FDIM.tank.radius ** 2 * tankLength();
+  assert.ok(Math.abs(barrel - tankCapacity()) < 1e-12,
+    `the barrel holds ${(barrel * 1000).toFixed(3)} L but the job wants ${tankLitres().toFixed(3)} L`);
+});
+
+test('[fabricator] a course divides into whole segments, and a tankful into whole courses', () => {
+  // A run that stops halfway through a segment is a run nobody printed — the same argument the
+  // container's fold pitch makes, and the reason `segsPerCourse` is a multiple of four.
+  assert.equal(FDIM.pier.segsPerCourse % 4, 0, 'a square course needs the same count on each side');
+  assert.ok(Math.abs(segmentLength() * FDIM.pier.segsPerCourse - coursePerimeter()) < 1e-12);
+  assert.equal(totalSegments() % FDIM.pier.segsPerCourse, 0);
+  assert.equal(segmentsLaid(0), totalSegments(), 'an empty tank should have finished the pier');
+  assert.equal(segmentsLaid(tankLitres()), 0, 'a full tank should have laid nothing');
+});
+
+test('[fabricator] what is on the bed is what left the tank', () => {
+  /**
+   * Conservation, measured rather than asserted: at each charge, count the bead segments the
+   * graph is actually drawing, multiply by the section, and compare against the volume missing
+   * from the reservoir. They agree to within one segment, which is the quantisation the
+   * deposition itself has — the bead is laid in discrete chunks and the drawing says so.
+   */
+  const bead = fabricator.getObjectByName('Bead_Instanced');
+  const segVolume = segmentLength() * beadArea();
+  for (const f of [0, 0.19, 0.5, 0.72, 1]) {
+    const charge = f * tankLitres();
+    fabPose({ ...FAB_REST, charge });
+    const onBed = bead.count * segVolume;
+    const spent = tankCapacity() - charge / 1000;
+    assert.ok(Math.abs(onBed - spent) <= segVolume + 1e-12,
+      `at ${charge.toFixed(2)} L the bed holds ${(onBed * 1000).toFixed(3)} L `
+      + `but ${(spent * 1000).toFixed(3)} L has left the tank`);
+  }
+  fabPose(FAB_REST);
+});
+
+test('[fabricator] the nozzle is on the work, whatever the boom is doing', () => {
+  /**
+   * The subject.
+   *
+   * The RA-6 holds a DIRECTION while its arm moves underneath; this holds a POINT while its
+   * whole machine moves around it — and it can, because it is not bolted to anything. Swept
+   * over the charge range and the full boom envelope, the orifice has to land on the next
+   * segment to be laid, plus the standoff, every time. There is no clamp and no unreachable
+   * corner to be honest about: the solve spends three free translations, and a free-flying root
+   * never runs out of them.
+   */
+  let worst = 0;
+  for (const f of [0, 0.11, 0.37, 0.5, 0.83, 1]) {
+    for (const boomYaw of [-FDIM.limits.boomYaw, -7, 0, 21, FDIM.limits.boomYaw]) {
+      for (const boomPitch of [-FDIM.limits.boomPitch, 0, FDIM.limits.boomPitch]) {
+        for (const headPitch of [-FDIM.limits.headPitch, 0, FDIM.limits.headPitch]) {
+          const charge = f * tankLitres();
+          fabPose({ charge, boomYaw, boomPitch, headPitch });
+          const want = nozzleTarget(charge);
+          const got = nozzleAt();
+          worst = Math.max(worst,
+            Math.abs(got.x - want.x), Math.abs(got.y - want.y), Math.abs(got.z - want.z));
+        }
+      }
+    }
+  }
+  assert.ok(worst < 1e-9, `the orifice misses the work by up to ${worst.toExponential(2)} m`);
+  fabPose(FAB_REST);
+});
+
+test('[fabricator] the boom moves the machine, not the tool', () => {
+  // The demonstration, stated as the difference it makes: the same slider that would move the
+  // nozzle on any other subject moves the airframe here, by a distance you can measure, while
+  // the nozzle does not move at all.
+  const platform = fabricator.getObjectByName('Airframe_Platform');
+  fabPose({ ...FAB_REST, boomYaw: -FDIM.limits.boomYaw });
+  const machineA = platform.position.clone();
+  const toolA = nozzleAt();
+  fabPose({ ...FAB_REST, boomYaw: FDIM.limits.boomYaw });
+  assert.ok(platform.position.distanceTo(machineA) > 0.1,
+    'swinging the boom should slide the whole drone across the work');
+  assert.ok(nozzleAt().distanceTo(toolA) < 1e-9, 'the orifice must not have moved');
+  fabPose(FAB_REST);
+});
+
+test('[fabricator] the work is in the world frame, not the drone\'s', () => {
+  /**
+   * The finding that shaped the hierarchy. Material that has left the nozzle belongs to the
+   * ground, so `Workpiece_Group` is a SIBLING of the airframe — parent it to the head and the
+   * pier flies away with the drone the first time anything moves. Checked structurally (nothing
+   * under the platform) and behaviourally (the bead does not move when the machine does).
+   */
+  const platform = fabricator.getObjectByName('Airframe_Platform');
+  const work = fabricator.getObjectByName('Workpiece_Group');
+  for (let p = work.parent; p; p = p.parent) {
+    assert.notEqual(p, platform, 'the printed work must not hang off the airframe');
+  }
+
+  fabPose({ ...FAB_REST, charge: 0.5 * tankLitres() });
+  const before = fabricator.getObjectByName('Bead_Instanced').getWorldPosition(new THREE.Vector3());
+  const moved = platform.position.clone();
+  fabPose({ ...FAB_REST, charge: 0.5 * tankLitres(), boomYaw: FDIM.limits.boomYaw });
+  assert.ok(platform.position.distanceTo(moved) > 0.05, 'the drone should have moved at all');
+  const after = fabricator.getObjectByName('Bead_Instanced').getWorldPosition(new THREE.Vector3());
+  assert.equal(before.distanceTo(after), 0, 'the bead moved with the machine');
+  fabPose(FAB_REST);
+});
+
+test('[fabricator] the pier is one bead thick and stands inside its declared plan', () => {
+  // Measured off the instance matrices rather than the design constants: a segment placed by
+  // arithmetic that drifted from `pier.outer` would build a pier no drawing describes.
+  const bead = fabricator.getObjectByName('Bead_Instanced');
+  const m = new THREE.Matrix4();
+  const v = new THREE.Vector3();
+  const box = new THREE.Box3();
+  const half = FDIM.pier.bead.width / 2;
+  for (let i = 0; i < totalSegments(); i++) {
+    bead.getMatrixAt(i, m);
+    v.setFromMatrixPosition(m);
+    box.expandByPoint(v);
+    // Every segment's centreline is exactly half a bead inside the outer face, on one axis or
+    // the other — which is what "the wall is one bead thick" means.
+    const dx = Math.abs(Math.abs(v.x) - (FDIM.pier.outer / 2 - half));
+    const dz = Math.abs(Math.abs(v.z) - (FDIM.pier.outer / 2 - half));
+    // Instance matrices live in a Float32Array, so the tolerance here is single precision —
+    // tighter than that and this test would be measuring the buffer rather than the pier.
+    assert.ok(Math.min(dx, dz) < 1e-6, `segment ${i} is off the wall centreline`);
+  }
+  assert.ok(box.max.x + half <= FDIM.pier.outer / 2 + 1e-6);
+  assert.ok(box.max.z + half <= FDIM.pier.outer / 2 + 1e-6);
+  const top = box.max.y + FDIM.pier.bead.height / 2 - FDIM.pier.slab.thickness;
+  assert.ok(Math.abs(top - pierHeight()) < 1e-6,
+    `the finished pier is ${top.toFixed(4)} m, the drawing says ${pierHeight().toFixed(4)}`);
+});
+
+test('[fabricator] the orifice is where the parts stack ends', () => {
+  // `Nozzle_Tip` is the one node other code reads by name, and the hover solve is written
+  // entirely in terms of it — so a head whose castings grew without the empty following would
+  // park the whole machine off the work with nothing to notice.
+  const H = FDIM.head;
+  assert.equal(nozzleTipZ(), H.gap + H.body.depth + H.heater.length + H.cone.length);
+  assert.equal(fabricator.getObjectByName('Nozzle_Tip').position.z, nozzleTipZ());
+  const cone = fabricator.getObjectByName('Nozzle_Cone');
+  cone.geometry.computeBoundingBox();
+  assert.ok(Math.abs(cone.position.z + cone.geometry.boundingBox.max.z - nozzleTipZ()) < 1e-9,
+    'the nozzle geometry and the empty at its tip disagree about where the orifice is');
+});
+
+test('[fabricator] a landing does not put the machine down on its nozzle', () => {
+  // The limb lengths and the boom's are not independent tastes: deployed, a limb has to reach
+  // further below the hull than the extruder does. Same shape of paired constraint as the RA-6's
+  // wrist roll and tool pitch, and stated rather than clamped.
+  assert.ok(legsClearTheNozzle(),
+    `limbs reach ${legReach(100).toFixed(3)} m, the boom hangs ${nozzleTipZ().toFixed(3)} m past its axis`);
+  assert.ok(legReach(0) < legReach(100), 'STANCE 0 is stowed and must be the shorter of the two');
+});
+
+test('[fabricator] the feed line is broken at every joint it crosses', () => {
+  /**
+   * The one thing on the reference sheet this subject will not build.
+   *
+   * The art draws a single continuous hose from the reservoir to the nozzle. There is no
+   * skinning anywhere in this project — `cableRun` says so in its docstring — so a run authored
+   * across a driven pivot tears open the first time the slider moves. The fix is not a renderer
+   * feature, it is how a real machine is dressed: break the line at each joint and put a rotary
+   * coupling there. This checks the break rather than the hose: consecutive runs must be
+   * separated by at least one driven node, or they are one hose pretending to be three.
+   */
+  const driven = new Set(fabricator.userData.joints.flatMap((j) => j.targets.map((t) => t.node)));
+  const chain = (name) => {
+    const out = [];
+    for (let o = fabricator.getObjectByName(name); o; o = o.parent) out.push(o.name);
+    return out;
+  };
+  const runs = ['Feed_Line_Body', 'Feed_Line_Boom', 'Feed_Line_Head'];
+  for (const name of runs) assert.ok(fabricator.getObjectByName(name), `missing ${name}`);
+  for (let i = 0; i < runs.length - 1; i++) {
+    const outer = new Set(chain(runs[i]));
+    const between = chain(runs[i + 1]).filter((n) => !outer.has(n));
+    assert.ok(between.some((n) => driven.has(n)),
+      `${runs[i]} and ${runs[i + 1]} sit in the same rigid frame — that is one hose, not two`);
+  }
+});
+
+test('[fabricator] the accent channels say what each lit part is', () => {
+  // Blue for everything the power core feeds, and the fourth channel for the one part that is
+  // hot rather than powered. The distinction is a fact about the part, which is exactly what the
+  // channel is for — what channel 4 looks like is the renderer's business.
+  for (const name of ['Core_Lens', 'Emitter_FL_Lens', 'Emitter_RR_Lens', 'Level_Collar',
+    'Sensor_Lens', 'Beacon_Aft']) {
+    const node = fabricator.getObjectByName(name);
+    assert.ok(node, `missing ${name}`);
+    assert.equal(node.userData.emissive, EMISSIVE.secondary, `${name} is on the wrong channel`);
+  }
+  const heater = fabricator.getObjectByName('Nozzle_Heater');
+  assert.equal(heater.userData.emissive, EMISSIVE.quaternary,
+    'the heater band is hot, not powered — it must not share the core\'s channel');
+  assert.equal(fabricator.getObjectByName('Bead_Instanced').userData.emissive, EMISSIVE.none,
+    'cured bead is not lit');
+});
+
+test('[fabricator] the solve is idempotent — running it twice changes nothing', () => {
+  // It runs every frame on top of whatever it wrote last frame, so an accumulating version would
+  // drift the machine off the work over minutes rather than fail on the first frame.
+  fabPose({ charge: 0.4 * tankLitres(), boomYaw: 15, boomPitch: -8, headPitch: 4 });
+  const once = fabricator.getObjectByName('Airframe_Platform').position.clone();
+  updateFabricatorPose(fabricator);
+  updateFabricatorPose(fabricator);
+  assert.equal(once.distanceTo(fabricator.getObjectByName('Airframe_Platform').position), 0);
+  fabPose(FAB_REST);
+});
+
+test('[fabricator] the bead path walks a closed course and climbs one bead per lap', () => {
+  // The path is the machine's whole itinerary — where it hovers is `beadPose` of the next
+  // segment — so a path that skipped a corner would fly the drone through the pier.
+  const n = FDIM.pier.segsPerCourse;
+  for (const course of [0, 7, FDIM.pier.courses - 1]) {
+    const first = beadPose(course * n);
+    const last = beadPose(course * n + n - 1);
+    assert.ok(Math.abs(first.y - last.y) < 1e-12, 'a course is level');
+    assert.ok(Math.hypot(first.x - last.x, first.z - last.z) - segmentLength() < 1e-12,
+      'the last segment of a course should close back onto the first');
+    if (course > 0) {
+      assert.ok(Math.abs(first.y - beadPose((course - 1) * n).y - FDIM.pier.bead.height) < 1e-12,
+        'each lap should rise exactly one bead');
+    }
+  }
+});
+
 console.log('\nUVs and part data');
 
 console.log('\nexplode');
@@ -1678,7 +1960,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="3d12ccc0">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="8f08c128">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

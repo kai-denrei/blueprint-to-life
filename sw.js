@@ -13,7 +13,7 @@
  * shows a toast; skipWaiting only runs when the user says so. Reloading a WebGL app out from
  * under someone mid-orbit is exactly the thing that makes PWAs feel broken.
  */
-const CB_TOKEN = '3d12ccc0';
+const CB_TOKEN = '8f08c128';
 const CACHE = `blueprint-to-life-${CB_TOKEN}`;
 const OFFLINE_URL = './offline.html';
 
@@ -38,6 +38,8 @@ const PRECACHE = [
   './src/chrome/schematic.js',
   './src/container/buildContainer.js',
   './src/container/dimensions.js',
+  './src/fabricator/buildFabricator.js',
+  './src/fabricator/dimensions.js',
   './src/gimbal/buildGimbal.js',
   './src/gimbal/dimensions.js',
   './src/headless/buildHeadless.js',
@@ -64,6 +66,7 @@ const PRECACHE = [
   './src/server/dimensions.js',
   './src/subjects/box.js',
   './src/subjects/container.js',
+  './src/subjects/fabricator.js',
   './src/subjects/gimbal.js',
   './src/subjects/headless.js',
   './src/subjects/heptapod.js',

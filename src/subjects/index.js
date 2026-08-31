@@ -8,6 +8,7 @@ import { ROBOTARM_SUBJECT } from './robotarm.js';
 import { GIMBAL_SUBJECT } from './gimbal.js';
 import { SERVER_SUBJECT } from './server.js';
 import { CONTAINER_SUBJECT } from './container.js';
+import { FABRICATOR_SUBJECT } from './fabricator.js';
 import { HOWITZER_SUBJECT } from './howitzer.js';
 import { BOX_SUBJECT } from './box.js';
 
@@ -28,6 +29,7 @@ export const SUBJECTS = {
   gimbal: { label: 'GS-3 GIMBAL', subject: GIMBAL_SUBJECT },
   server: { label: 'SERVER01', subject: SERVER_SUBJECT },
   container: { label: 'CX-20', subject: CONTAINER_SUBJECT },
+  fabricator: { label: 'FD-4 DRONE', subject: FABRICATOR_SUBJECT },
   howitzer: { label: 'HOWITZER', subject: HOWITZER_SUBJECT },
   box: { label: 'BOX RIG', subject: BOX_SUBJECT },
 };
