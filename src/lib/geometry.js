@@ -444,6 +444,109 @@ export function corrugatedPanel({
 }
 
 /**
+ * Sweep a closed convex 2D profile along a circular ARC about the Z axis.
+ *
+ * The straight-line twin of this is `extrudeProfile`, and the two are deliberately separate
+ * functions rather than one with a `radius` option. The extruder's caps are flat and parallel
+ * and its side band is a ruled surface; here the caps are splayed by the arc and every side quad
+ * is a frustum of a cone. Bolting a curvature parameter onto the extruder would have meant
+ * eleven existing subjects sharing a code path for a case none of them use — the argument the
+ * project has already made twice about the shared MODELS contract, applied to a generator.
+ *
+ * A ring is the shape this could not previously make, and a ring is the whole of the portal
+ * subject: three concentric rows of segments, each row a repeat of one arc at one pitch.
+ *
+ * Profile points are `[u, v]` in the swept plane: `u` is the RADIAL offset from `radius`
+ * (positive = outboard) and `v` is along Z. Convex, either winding — `ensureCCW` normalises it,
+ * exactly as the extruder does, and for the same reason: the caps are fanned from vertex 0 and
+ * a fan is only safe on a convex loop.
+ *
+ * The arc is centred on the +X axis and spans `angle` radians, so a segment authored at zero
+ * sits at three o'clock and a row is built by rotating copies about Z. Winding is outward on
+ * every surface; `signedVolume` in the invariant suite is what says so rather than the eye.
+ *
+ * @param {object} opts
+ * @param {Array<[number,number]>} opts.profile  section, as [radial offset, z]
+ * @param {number} opts.radius                   sweep radius the profile's u = 0 rides on
+ * @param {number} opts.angle                    arc swept, in radians
+ * @param {number} [opts.segments=10]            steps along the arc
+ */
+export function arcSegment({ profile, radius, angle, segments = 10 }) {
+  const pts = ensureCCW(profile);
+  const n = pts.length;
+  const steps = Math.max(1, Math.round(segments));
+
+  const at = (i, phi) => {
+    const [u, v] = pts[i];
+    const r = radius + u;
+    return [r * Math.cos(phi), r * Math.sin(phi), v];
+  };
+
+  // Perimeter parameterisation for the side band's V coordinate, as in `extrudeProfile`.
+  const seg = [];
+  let perim = 0;
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    seg.push(perim);
+    perim += Math.hypot(b[0] - a[0], b[1] - a[1]);
+  }
+
+  const pos = [], uv = [];
+
+  // Side band. Wound sweep-first then profile-first, which puts the normal at `t_sweep x
+  // t_profile` — outboard on the outer face, and consistently outward everywhere else.
+  for (let k = 0; k < steps; k++) {
+    const p0 = -angle / 2 + (k / steps) * angle;
+    const p1 = -angle / 2 + ((k + 1) / steps) * angle;
+    const u0 = k / steps, u1 = (k + 1) / steps;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      const v0 = seg[i] / perim;
+      const v1 = (i === n - 1 ? perim : seg[i + 1]) / perim;
+      const A = at(i, p0), B = at(i, p1), C = at(j, p1), D = at(j, p0);
+      tri(pos, uv, A, B, C, [u0, v0], [u1, v0], [u1, v1]);
+      tri(pos, uv, A, C, D, [u0, v0], [u1, v1], [u0, v1]);
+    }
+  }
+
+  // End caps, fanned from vertex 0. The far cap faces +phi and the near one -phi, so the two
+  // fans run in opposite orders — the same asymmetry the extruder's two caps have.
+  const bb = profileBounds(pts);
+  const capUV = (p) => [(p[0] - bb.minZ) / bb.dz, (p[1] - bb.minY) / bb.dy];
+  for (let i = 1; i < n - 1; i++) {
+    const far = [0, i + 1, i].map((k) => at(k, angle / 2));
+    tri(pos, uv, far[0], far[1], far[2], capUV(pts[0]), capUV(pts[i + 1]), capUV(pts[i]));
+    const near = [0, i, i + 1].map((k) => at(k, -angle / 2));
+    tri(pos, uv, near[0], near[1], near[2], capUV(pts[0]), capUV(pts[i]), capUV(pts[i + 1]));
+  }
+
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geom.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  return finish(geom);
+}
+
+/**
+ * The angular layout of one row of ring segments.
+ *
+ * Returns a centre angle and a swept angle per segment, with `gap` of the pitch left open
+ * between neighbours. The gap is not styling: every row is ONE InstancedMesh and therefore one
+ * part id, so two segments that touched would show no seam at all — the failure the FD-4's bead
+ * ran into, avoided here by the segments not touching in the first place.
+ *
+ * @param {number} count
+ * @param {number} [gap=0.08]  fraction of the pitch left open
+ */
+export function ringLayout(count, gap = 0.08) {
+  const pitch = (Math.PI * 2) / count;
+  return Array.from({ length: count }, (_, i) => ({
+    index: i,
+    angle: i * pitch,
+    span: pitch * (1 - gap),
+  }));
+}
+
+/**
  * A fold pitch that divides a panel exactly.
  *
  * A corrugated wall that ends on a half fold is a wall nobody pressed. Snapping the pitch to the

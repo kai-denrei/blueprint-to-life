@@ -13,7 +13,7 @@
  * shows a toast; skipWaiting only runs when the user says so. Reloading a WebGL app out from
  * under someone mid-orbit is exactly the thing that makes PWAs feel broken.
  */
-const CB_TOKEN = '074bf0a2';
+const CB_TOKEN = '76eed12e';
 const CACHE = `blueprint-to-life-${CB_TOKEN}`;
 const OFFLINE_URL = './offline.html';
 
@@ -57,6 +57,8 @@ const PRECACHE = [
   './src/mkcx/dimensions.js',
   './src/motopod/buildMotopod.js',
   './src/motopod/dimensions.js',
+  './src/portal/buildPortal.js',
+  './src/portal/dimensions.js',
   './src/pwa/lifecycle.js',
   './src/render/blueprint.js',
   './src/render/pbr.js',
@@ -76,10 +78,14 @@ const PRECACHE = [
   './src/subjects/mkcx.js',
   './src/subjects/mkvi.js',
   './src/subjects/motopod.js',
+  './src/subjects/portal.js',
   './src/subjects/robotarm.js',
   './src/subjects/server.js',
+  './src/subjects/terraformer.js',
   './src/tank/buildTank.js',
   './src/tank/dimensions.js',
+  './src/terraformer/buildTerraformer.js',
+  './src/terraformer/dimensions.js',
   './vendor/three/addons/controls/OrbitControls.js',
   './vendor/three/addons/exporters/GLTFExporter.js',
   './vendor/three/addons/renderers/CSS2DRenderer.js',

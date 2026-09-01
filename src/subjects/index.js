@@ -9,6 +9,8 @@ import { GIMBAL_SUBJECT } from './gimbal.js';
 import { SERVER_SUBJECT } from './server.js';
 import { CONTAINER_SUBJECT } from './container.js';
 import { FABRICATOR_SUBJECT } from './fabricator.js';
+import { PORTAL_SUBJECT } from './portal.js';
+import { TERRAFORMER_SUBJECT } from './terraformer.js';
 import { HOWITZER_SUBJECT } from './howitzer.js';
 import { BOX_SUBJECT } from './box.js';
 
@@ -30,6 +32,8 @@ export const SUBJECTS = {
   server: { label: 'SERVER01', subject: SERVER_SUBJECT },
   container: { label: 'CX-20', subject: CONTAINER_SUBJECT },
   fabricator: { label: 'FD-4 DRONE', subject: FABRICATOR_SUBJECT },
+  portal: { label: 'GT-9 GATE', subject: PORTAL_SUBJECT },
+  terraformer: { label: 'TF-3000', subject: TERRAFORMER_SUBJECT },
   howitzer: { label: 'HOWITZER', subject: HOWITZER_SUBJECT },
   box: { label: 'BOX RIG', subject: BOX_SUBJECT },
 };

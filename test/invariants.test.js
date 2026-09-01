@@ -25,6 +25,17 @@ import { buildHeadless, updateHeadlessStance } from '../src/headless/buildHeadle
 import { buildMotopod, updateMotopodRide } from '../src/motopod/buildMotopod.js';
 import { buildRobotArm, updateRobotArmAim } from '../src/robotarm/buildRobotArm.js';
 import { RADIM, aimIsAlwaysReachable, solveAim } from '../src/robotarm/dimensions.js';
+import { buildTerraformer } from '../src/terraformer/buildTerraformer.js';
+import {
+  TDIM, courseLength, footprint, headClearance, liftStroke, nozzleHeight, railLength,
+  structureHeight, traverseStroke,
+} from '../src/terraformer/dimensions.js';
+import { buildPortal } from '../src/portal/buildPortal.js';
+import {
+  PDIM, apertureDepth, apertureRadius, legFoot, outerRadius, podAngles, rowGaps, rowProfile,
+  segmentCount,
+} from '../src/portal/dimensions.js';
+import { arcSegment, ringLayout } from '../src/lib/geometry.js';
 import { buildFabricator, updateFabricatorPose } from '../src/fabricator/buildFabricator.js';
 import {
   FDIM, beadArea, beadPose, courseVolume, coursePerimeter, legReach, legsClearTheNozzle,
@@ -70,6 +81,8 @@ const gimbal = buildGimbal();
 const server = buildServer();
 const container = buildContainer();
 const fabricator = buildFabricator();
+const portal = buildPortal();
+const terraformer = buildTerraformer();
 const howitzer = buildHowitzer();
 const byName = (n) => tank.getObjectByName(n);
 
@@ -249,6 +262,47 @@ const MODELS = [
              'Rotor_FL_Spin'],
   },
   {
+    /**
+     * A gate, and the first subject whose contract includes a NEGATIVE space. `armed: false`
+     * and no running gear; `instancedGear` names one of three segment rows, each of which is
+     * genuinely N copies of one static transform under one articulated parent.
+     *
+     * The required list names `Aperture_Volume` — an empty whose scale is the clear cylinder —
+     * because that node is the entire interface to whatever composites an effect into the bore.
+     * Rename it and the drawing still renders perfectly while the handoff silently breaks.
+     */
+    name: 'portal', root: portal, rootName: 'Portal_Root',
+    collision: 'Base_Collision', instancedGear: 'Shell_Instanced', armed: false,
+    required: ['Base_Group', 'Plinth_Mesh', 'Base_Collision', 'Slew_Ring', 'Yaw_Turntable',
+               'Buttress_Group', 'Buttress_L', 'Buttress_R', 'Conduit_L', 'Ring_Group',
+               'Aperture_Volume', 'Liner_Group', 'Liner_Ring', 'Edge_Ring_Front', 'Edge_Ring_Rear',
+               'Stator_Group', 'Shell_Instanced', 'Block_Instanced', 'Rotor_A_Spin',
+               'Rotor_B_Spin', 'RotorA_Instanced', 'RotorB_Instanced', 'RotorA_Glow_Instanced',
+               'Pods_Group', 'Pod_1_Mount', 'Pod_1_Body', 'Pod_1_Core', 'Pod_8_Vane_L',
+               'Pod_1_Fin_R'],
+    pivots: ['Yaw_Turntable', 'Ring_Group', 'Aperture_Volume', 'Rotor_A_Spin', 'Rotor_B_Spin',
+             'Pod_1_Mount', 'Pod_1_Vane_L', 'Pod_8_Vane_R'],
+  },
+  {
+    /**
+     * A gantry printer, and the first subject to declare a control that is not a slider. Its
+     * required list names the whole prismatic chain and `Structure_Group`, because that group is
+     * what the toggle addresses — rename it and the button silently stops finding anything.
+     */
+    name: 'terraformer', root: terraformer, rootName: 'Terraformer_Root',
+    collision: 'Gantry_Collision', instancedGear: 'Layers_Instanced', armed: false,
+    required: ['Site_Group', 'Rail_L1', 'Sleepers_Instanced', 'Structure_Group', 'Slab_Mesh',
+               'Layers_Instanced', 'Travel_Carriage', 'Gantry_Collision', 'Tower_L_Group',
+               'Tower_R_Group', 'Bogie_L', 'Tower_L_Mesh', 'Ladder_R', 'Outrigger_L1',
+               'Beam_Group', 'Beam_Mesh', 'Walkway_F', 'Silos_Group', 'Silo_1_Shell',
+               'Feed_Line_2', 'Traverse_Carriage', 'Carriage_Group', 'Carriage_Mesh',
+               'Mast_Stage_1', 'Mast_Stage_2', 'Mast_1_Mesh', 'Arm_Group', 'Arm_Swing',
+               'Arm_Mount', 'Arm_Shoulder', 'Arm_Upper', 'Arm_Elbow', 'Arm_Fore', 'Arm_Wrist',
+               'Head_Mesh', 'Nozzle_Heater', 'Nozzle_Cone', 'Nozzle_Tip'],
+    pivots: ['Travel_Carriage', 'Traverse_Carriage', 'Mast_Stage_1', 'Mast_Stage_2', 'Arm_Swing',
+             'Arm_Mount', 'Arm_Shoulder', 'Arm_Elbow', 'Arm_Wrist', 'Nozzle_Tip'],
+  },
+  {
     name: 'howitzer', root: howitzer, rootName: 'Howitzer_Root', collision: 'Chassis_Collision', instancedGear: 'Wheels_Instanced', armed: true,
     required: ['Chassis_Mesh', 'Chassis_Collision', 'Traverse_Pivot', 'TopCarriage_Mesh',
                'Elevation_Pivot', 'Barrel_Mesh', 'Wheels_Instanced', 'Details_Group'],
@@ -421,6 +475,30 @@ for (const m of MODELS) {
     }
     const keys = joints.map((j) => j.key);
     assert.equal(new Set(keys).size, keys.length, 'duplicate joint keys');
+  });
+
+  test(`[${m.name}] any declared toggle resolves and addresses a real group`, () => {
+    /**
+     * Toggles are the boolean half of the declared-control contract, added by the TF-3000. Most
+     * subjects declare none and this passes vacuously — which is the point of checking it here
+     * rather than in that subject's own block: the shape is general, so a second subject that
+     * wants one inherits the check.
+     */
+    for (const t of m.root.userData.toggles || []) {
+      for (const key of ['key', 'label', 'node', 'value']) {
+        assert.ok(t[key] !== undefined, `toggle ${t.key} missing ${key}`);
+      }
+      const node = m.root.getObjectByName(t.node);
+      assert.ok(node, `toggle ${t.key} targets missing node ${t.node}`);
+      assert.equal(typeof t.value, 'boolean', `toggle ${t.key} default must be a boolean`);
+      // A toggle hides a node by setting `visible`, so it must not address a node the viewer
+      // already owns the visibility of — the collision proxy is hidden by the `c` key and would
+      // be fought over.
+      assert.ok(!node.userData.isCollision, `toggle ${t.key} addresses the collision proxy`);
+      assert.ok(node.parent, `toggle ${t.key} addresses a detached node`);
+    }
+    const keys = (m.root.userData.toggles || []).map((t) => t.key);
+    assert.equal(new Set(keys).size, keys.length, 'duplicate toggle keys');
   });
 }
 
@@ -1914,6 +1992,388 @@ test('[fabricator] the bead path walks a closed course and climbs one bead per l
   }
 });
 
+console.log('\nthe gantry — three prismatic axes, and work you can take away');
+
+test('[terraformer] the structure toggle addresses the work and nothing else', () => {
+  /**
+   * The subject's one new mechanism. A toggle is the boolean half of the declared-control
+   * contract, and what makes it safe is that it addresses a GROUP that is nothing but the work:
+   * flipping it must not take away any of the machine.
+   */
+  const toggle = terraformer.userData.toggles.find((t) => t.key === 'structure');
+  assert.ok(toggle, 'no structure toggle declared');
+  const group = terraformer.getObjectByName(toggle.node);
+  assert.equal(group.parent.name, 'Terraformer_Root',
+    'the work hangs off the root, not off the gantry — it must not travel when the machine does');
+
+  // Everything under it is work; nothing under it is machine.
+  const inside = [];
+  group.traverse((o) => { if (o !== group) inside.push(o.name); });
+  assert.deepEqual(inside.sort(), ['Layers_Instanced', 'Slab_Mesh']);
+
+  // And the machine's own chain is entirely outside it.
+  for (const name of ['Nozzle_Tip', 'Arm_Fore', 'Beam_Mesh', 'Tower_L_Mesh', 'Gantry_Collision']) {
+    const node = terraformer.getObjectByName(name);
+    let under = false;
+    for (let p = node.parent; p; p = p.parent) if (p === group) under = true;
+    assert.ok(!under, `${name} would disappear with the structure`);
+  }
+});
+
+test('[terraformer] hiding the work leaves the machine standing', () => {
+  // The behaviour the button promises, checked rather than assumed: with the group hidden, every
+  // mesh still visible belongs to the gantry, and the count does not go to zero.
+  const group = terraformer.getObjectByName('Structure_Group');
+  const visibleMeshes = () => {
+    let n = 0;
+    terraformer.traverse((o) => {
+      if (!o.isMesh || o.userData.isCollision) return;
+      let shown = o.visible;
+      for (let p = o.parent; p && shown; p = p.parent) shown = p.visible;
+      if (shown) n++;
+    });
+    return n;
+  };
+  const all = visibleMeshes();
+  group.visible = false;
+  const machineOnly = visibleMeshes();
+  group.visible = true;
+  assert.equal(all - machineOnly, 2, 'hiding the work should remove exactly the slab and the courses');
+  assert.ok(machineOnly > 40, `only ${machineOnly} meshes left — the toggle took the machine too`);
+  assert.equal(visibleMeshes(), all, 'the toggle did not restore');
+});
+
+test('[terraformer] the closed-form nozzle height matches the built graph', () => {
+  /**
+   * `nozzleHeight()` is used to CHOOSE the rest lift as well as to report it, so it has to agree
+   * with the chain it describes — and it is the second time this project has authored a rest
+   * pose the viewer could not produce. The FD-4 left its ram at zero; this left both mast stages
+   * fully retracted while the LIFT slider defaulted to 20%, putting the head 0.88 m above where
+   * the title block said it was. Rotational joints are authored from `rest` and get this right
+   * by accident; prismatic ones have to be told.
+   */
+  for (const pose of [
+    TDIM.rest,
+    { ...TDIM.rest, lift: 0 },
+    { ...TDIM.rest, lift: 100 },
+    { lift: 55, swing: 0, shoulder: 12, elbow: -30, wrist: 5, travel: 0, traverse: 0 },
+    { lift: 80, swing: 40, shoulder: 61, elbow: -88, wrist: 44, travel: 0, traverse: 0 },
+  ]) {
+    setPose(terraformer, pose);
+    const tip = terraformer.getObjectByName('Nozzle_Tip').getWorldPosition(new THREE.Vector3());
+    assert.ok(Math.abs(tip.y - nozzleHeight(pose)) < 1e-9,
+      `lift ${pose.lift}: graph says ${tip.y.toFixed(4)}, the formula says ${nozzleHeight(pose).toFixed(4)}`);
+  }
+  setPose(terraformer, TDIM.rest);
+});
+
+test('[terraformer] the drawing is dimensioned with the head over the work, not in it', () => {
+  // A printer drawn with its nozzle buried in the wall is a drawing of a crash. This is why the
+  // rest lift is 20 and not a rounder number.
+  assert.ok(headClearance() > 0,
+    `the head is ${(-headClearance() * 1000).toFixed(0)} mm inside the printed wall`);
+  assert.ok(headClearance() < 1.0, 'the head is parked so high the drawing shows nothing working');
+  // And the lift can actually reach the work: floor to the top course, both inside the stroke.
+  assert.ok(nozzleHeight({ ...TDIM.rest, lift: 100 }) < TDIM.structure.slab.thickness + 1.0,
+    'at full extension the head cannot reach the first course');
+  assert.ok(nozzleHeight({ ...TDIM.rest, lift: 0 }) > structureHeight(),
+    'fully retracted, the head is still inside the wall');
+});
+
+test('[terraformer] every prismatic axis stays on the rail it rides', () => {
+  /**
+   * Three prismatic axes is the most this project has carried, and a prismatic joint has a
+   * failure the hinges do not: a stroke longer than the thing it slides on is a number rather
+   * than a motion, and nothing about the render says so.
+   */
+  const beamRail = 2 * (TDIM.tower.halfSpan - TDIM.beam.rail.inset);
+  assert.ok(traverseStroke() + TDIM.carriage.body.width <= beamRail + 1e-9,
+    `traverse stroke ${traverseStroke().toFixed(2)} m overruns a ${beamRail.toFixed(2)} m rail`);
+  // The travel stroke has to stay on the modelled rail, bogie length included.
+  const travel = terraformer.userData.joints.find((j) => j.key === 'travel');
+  const reach = Math.max(Math.abs(travel.min), Math.abs(travel.max)) + TDIM.tower.bogie.length / 2;
+  assert.ok(reach <= railLength() / 2 + 1e-9,
+    `the bogie runs ${reach.toFixed(2)} m off centre on a ${railLength().toFixed(1)} m rail`);
+  // A telescope's total is the sum of its stages, not the longer of them.
+  assert.equal(liftStroke(), TDIM.carriage.mast.stage1.stroke + TDIM.carriage.mast.stage2.stroke);
+  // Stage 2 must not fall out of stage 1 at full extension.
+  assert.ok(TDIM.carriage.mast.stage1.stroke < TDIM.carriage.mast.stage1.length,
+    'stage 1 extends further than its own length — the stages separate');
+});
+
+test('[terraformer] the printed courses are identical and stack without a gap', () => {
+  // One geometry, fifteen instances: the case an InstancedMesh is actually for. The courses must
+  // butt exactly, or the wall is a stack of floating slices.
+  const layers = terraformer.getObjectByName('Layers_Instanced');
+  const S = TDIM.structure;
+  assert.equal(layers.count, S.layer.count);
+  const m = new THREE.Matrix4();
+  const v = new THREE.Vector3();
+  let prev = null;
+  for (let i = 0; i < layers.count; i++) {
+    layers.getMatrixAt(i, m);
+    v.setFromMatrixPosition(m);
+    assert.ok(Math.abs(v.x) < 1e-6 && Math.abs(v.z) < 1e-6, 'a course is offset in plan');
+    if (prev !== null) {
+      assert.ok(Math.abs((v.y - prev) - S.layer.height) < 1e-6,
+        `course ${i} is ${(v.y - prev).toFixed(4)} m above the last, not ${S.layer.height}`);
+    }
+    prev = v.y;
+  }
+  assert.ok(Math.abs(prev + S.layer.height / 2 - structureHeight()) < 1e-6,
+    'the top course does not land on the declared wall height');
+});
+
+test('[terraformer] the footprint closes, and the doorway is the only break in it', () => {
+  /**
+   * The plan is straight runs plus four quarter arcs, and it has to be a closed loop or the
+   * building has a wall missing. Checked as a length identity: the straight runs plus the four
+   * corners plus the doorway must add up to the perimeter of the rounded rectangle.
+   */
+  const f = footprint();
+  const S = TDIM.structure;
+  const outer = f.runs.filter((r) => !S.partitions.some((p) => p[0] === r.x && r.axis === 'z'));
+  const straight = outer.reduce((n, r) => n + r.length, 0);
+  const perimeter = 2 * (2 * (S.A - S.radius)) + 2 * (2 * (S.B - S.radius)) + 2 * Math.PI * S.radius;
+  assert.ok(Math.abs(straight + S.door.width + 2 * Math.PI * S.radius - perimeter) < 1e-9,
+    'the footprint does not close');
+  assert.equal(f.corners.length, 4);
+  // The internal partitions are extra, and the course length counts them.
+  assert.ok(courseLength() > perimeter - S.door.width, 'partitions are missing from the run length');
+});
+
+console.log('\nthe gate — the hole is the deliverable');
+
+/**
+ * Every rendered vertex in the graph, in the aperture's own frame.
+ *
+ * Instanced rows are walked instance by instance: a bore intrusion hidden in instance 11 of 18
+ * is exactly the kind of thing a spot check on the base geometry would miss.
+ */
+function apertureFrameVertices(root, pose) {
+  if (pose) setPose(root, pose);
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.getObjectByName('Aperture_Volume').matrixWorld).invert();
+  // The marker carries the clear radius as its scale, so undo it: work in metres, not in bores.
+  const scale = new THREE.Vector3();
+  root.getObjectByName('Aperture_Volume').matrixWorld.decompose(new THREE.Vector3(), new THREE.Quaternion(), scale);
+  const out = [];
+  const v = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  const im = new THREE.Matrix4();
+  root.traverse((o) => {
+    if (!o.isMesh || o.userData.isCollision) return;
+    const pos = o.geometry.getAttribute('position');
+    const instances = o.isInstancedMesh ? o.count : 1;
+    for (let k = 0; k < instances; k++) {
+      m.copy(inv).multiply(o.matrixWorld);
+      if (o.isInstancedMesh) { o.getMatrixAt(k, im); m.multiply(im); }
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(m);
+        out.push({ name: o.name, r: Math.hypot(v.x * scale.x, v.y * scale.y), z: v.z * scale.z });
+      }
+    }
+  });
+  return out;
+}
+
+test('[portal] the aperture is a transform, and it is the clear volume', () => {
+  /**
+   * The interface. `Aperture_Volume` is an empty whose scale IS the clear cylinder — radius in
+   * X and Y, half-depth in Z — so the application that composites an effect into the bore reads
+   * the volume off the node rather than off a document that can go stale. Checked against the
+   * same functions the liner is laid out from, which is what stops the two drifting.
+   */
+  const node = portal.getObjectByName('Aperture_Volume');
+  assert.equal(node.isMesh, undefined, 'the aperture must carry no geometry — that is the point');
+  assert.equal(node.children.length, 0, 'a scaled node with children would scale geometry');
+  assert.equal(node.scale.x, apertureRadius());
+  assert.equal(node.scale.y, apertureRadius());
+  assert.equal(node.scale.z, apertureDepth() / 2);
+  // It sits on the gate's axis, at the ring centre.
+  assert.deepEqual(node.position.toArray(), [0, 0, 0]);
+  assert.equal(node.parent.name, 'Ring_Group');
+});
+
+test('[portal] nothing intrudes on the clear aperture, in any pose', () => {
+  /**
+   * The subject.
+   *
+   * The brief is a heavy ring with an empty centre, because what appears in that centre is
+   * composited downstream in another application. That makes the hole a deliverable, and a
+   * deliverable gets an assertion: no vertex anywhere in the graph may lie inside the clear
+   * cylinder, swept over the whole articulation envelope.
+   *
+   * Swept, because two of the four joints spin rows of segments through the bore's neighbourhood
+   * and one turns the entire gate. A single-pose check would pass on a rotor whose segments dip
+   * inboard once every eighteenth of a turn.
+   */
+  const clear = apertureRadius();
+  const halfDepth = apertureDepth() / 2;
+  const offenders = [];
+  let closest = Infinity;
+  let closestOn = '';
+
+  for (const yaw of [-180, -47, 0, 90, 180]) {
+    for (const rotorA of [0, 7, 103, 259, 360]) {
+      for (const rotorB of [0, 13, 197, 360]) {
+        for (const vanes of [0, 100]) {
+          for (const p of apertureFrameVertices(portal, { yaw, rotorA, rotorB, vanes })) {
+            if (Math.abs(p.z) > halfDepth) continue;
+            if (p.r < closest) { closest = p.r; closestOn = p.name; }
+            if (p.r < clear - 1e-6) offenders.push(`${p.name} at r=${p.r.toFixed(4)}`);
+          }
+        }
+      }
+    }
+  }
+  assert.deepEqual([...new Set(offenders)], [],
+    `geometry inside the clear aperture (r < ${clear}):\n${[...new Set(offenders)].join('\n')}`);
+  // And the bore is not merely clear but exactly bounded — a liner that had drifted outboard
+  // would pass the check above while quietly making the aperture bigger than the drawing says.
+  assert.ok(Math.abs(closest - clear) < 1e-5,
+    `the closest geometry is at ${closest.toFixed(5)} on ${closestOn}, not at the declared ${clear}`);
+  setPose(portal, PDIM.rest);
+});
+
+test('[portal] the rows have running clearance and cannot touch', () => {
+  // Two of the three rows counter-rotate, so these gaps are dimensions rather than styling.
+  // An overlap of a millimetre is two rows welded together, and it is invisible: it happens
+  // inside the armour where no view of the drawing reaches.
+  for (const { name, gap } of rowGaps()) {
+    assert.ok(Math.abs(gap - PDIM.clearance) < 1e-9,
+      `${name}: ${(gap * 1000).toFixed(1)} mm, declared ${(PDIM.clearance * 1000).toFixed(1)} mm`);
+    assert.ok(gap > 0, `${name} overlaps`);
+  }
+});
+
+test('[portal] segments in a row do not touch, so the shared part id shows no seam', () => {
+  /**
+   * A row is one InstancedMesh and therefore one part id, so two segments that met would show
+   * no boundary at all — the failure the FD-4's bead ran into and solved with a section. Here
+   * the answer is that a segmented ring has gaps in it anyway; this checks the gap is real.
+   */
+  for (const row of [PDIM.rows.rotorA, PDIM.rows.rotorB, PDIM.rows.stator]) {
+    const layout = ringLayout(row.count, PDIM.gap);
+    const pitch = (Math.PI * 2) / row.count;
+    assert.ok(layout[0].span < pitch, 'a span equal to the pitch is a continuous ring');
+    // Arc length of the gap at the row's outer radius — the widest the seam ever is.
+    const gapArc = (pitch - layout[0].span) * row.r1;
+    assert.ok(gapArc > 0.02, `gap of ${(gapArc * 1000).toFixed(1)} mm will not read as a seam`);
+  }
+});
+
+test('[portal] the collision proxy does not claim the bore', () => {
+  /**
+   * Every other subject's proxy is a box around the whole machine. A box around a ring contains
+   * the hole, so it would mark as solid the one volume this subject exists to keep empty, and
+   * anything pathing against it would refuse to walk through the gate. The proxy is the plinth.
+   */
+  const proxy = portal.getObjectByName('Base_Collision');
+  portal.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(proxy);
+  const aperture = portal.getObjectByName('Aperture_Volume').getWorldPosition(new THREE.Vector3());
+  assert.ok(!box.containsPoint(aperture), 'the collision proxy contains the aperture centre');
+  assert.ok(box.max.y < aperture.y - apertureRadius(),
+    'the proxy reaches into the ring; it should stop at the plinth');
+});
+
+test('[portal] buttresses land on the armour they are drawn against', () => {
+  // Both ends derived rather than typed: a leg whose head was a literal would hang in the air
+  // the first time the ring moved up, which is exactly how the MK-CX's fenders failed.
+  for (const side of [-1, 1]) {
+    const head = legFoot(side);
+    const r = Math.hypot(head.x, head.y - PDIM.centreY);
+    assert.ok(Math.abs(r - outerRadius()) < 1e-9,
+      `buttress head is at r=${r.toFixed(4)}, the armour is at ${outerRadius()}`);
+    assert.ok(head.y < PDIM.centreY, 'a buttress meets the ring below its centre');
+  }
+});
+
+test('[portal] every lit part is on the one accent channel the brief asked for', () => {
+  /**
+   * The accent arc runs the other way on this subject. Channels grew from a boolean to four
+   * because successive vehicles wanted different hues; here the brief specifies blue, and a
+   * second hue would be the drawing inventing a distinction the machine does not have. So this
+   * checks a NEGATIVE: nothing lit is on any channel but the second.
+   */
+  const lit = [];
+  portal.traverse((o) => {
+    if (o.isMesh && !o.userData.isCollision && o.userData.emissive) {
+      lit.push([o.name, o.userData.emissive]);
+    }
+  });
+  assert.ok(lit.length >= 6, `expected the ring to be lit, found ${lit.length} accents`);
+  const wrong = lit.filter(([, c]) => c !== EMISSIVE.secondary);
+  assert.deepEqual(wrong, [], 'this subject declares one accent channel and must use only it');
+  for (const name of ['Edge_Ring_Front', 'Edge_Ring_Rear', 'Pod_1_Core', 'Slew_Glow']) {
+    assert.ok(lit.some(([n]) => n === name), `${name} should be lit`);
+  }
+});
+
+console.log('\nthe arc generator');
+
+/**
+ * Signed volume of a closed triangle soup, by the divergence theorem.
+ *
+ * Positive means the faces wind outward. This is the check that made writing `arcSegment`
+ * tractable: the sweep's caps face opposite ways and its side band is a cone frustum, so "does
+ * this look right" in one view is not evidence, and an inward-wound solid renders black in the
+ * game path while looking perfect in the blueprint one — the same two-modes-disagree trap the
+ * container's walls fell into.
+ */
+function signedVolume(geom) {
+  const p = geom.getAttribute('position').array;
+  let v = 0;
+  for (let i = 0; i < p.length; i += 9) {
+    const ax = p[i], ay = p[i + 1], az = p[i + 2];
+    const bx = p[i + 3], by = p[i + 4], bz = p[i + 5];
+    const cx = p[i + 6], cy = p[i + 7], cz = p[i + 8];
+    v += (ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx)) / 6;
+  }
+  return v;
+}
+
+test('arcSegment winds outward, and encloses the volume Pappus says it should', () => {
+  // Pappus: a swept solid's volume is the profile's area times the distance its centroid
+  // travels. Checking against that rather than against a recorded number means the test knows
+  // what the answer should be, not merely what it was last time.
+  const profile = [[0, -0.4], [0.5, -0.4], [0.5, 0.4], [0, 0.4]];
+  const radius = 2.0, angle = Math.PI / 6;
+  const geom = arcSegment({ profile, radius, angle, segments: 96 });
+  const area = 0.5 * 0.8;
+  const expected = area * ((radius + 0.25) * angle);
+  const got = signedVolume(geom);
+  assert.ok(got > 0, 'inward winding: the solid would render black in the game path');
+  assert.ok(Math.abs(got / expected - 1) < 1e-3,
+    `volume ${got.toFixed(6)}, Pappus says ${expected.toFixed(6)}`);
+});
+
+test('every ring segment the gate is built from winds outward', () => {
+  // The generator being right in isolation is not the same as every profile the subject feeds
+  // it being right. A concave profile would fan its caps through the solid and flip the sign.
+  for (const [name, row] of Object.entries(PDIM.rows)) {
+    if (!row.count) continue;
+    const geom = arcSegment({
+      profile: rowProfile(row), radius: row.r0, angle: ringLayout(row.count, PDIM.gap)[0].span,
+      segments: row.arcSteps,
+    });
+    assert.ok(signedVolume(geom) > 0, `${name} segment is wound inward`);
+  }
+});
+
+test('ringLayout spaces a row evenly and leaves the declared gap', () => {
+  const layout = ringLayout(PDIM.rows.stator.count, PDIM.gap);
+  assert.equal(layout.length, PDIM.rows.stator.count);
+  const pitch = (Math.PI * 2) / PDIM.rows.stator.count;
+  layout.forEach((s, i) => {
+    assert.ok(Math.abs(s.angle - i * pitch) < 1e-12, 'segments are not evenly pitched');
+    assert.ok(Math.abs(s.span - pitch * (1 - PDIM.gap)) < 1e-12);
+  });
+  assert.equal(podAngles().length, PDIM.pod.count);
+  assert.equal(segmentCount(), PDIM.rows.rotorA.count + PDIM.rows.rotorB.count + PDIM.rows.stator.count);
+});
+
 console.log('\nUVs and part data');
 
 console.log('\nexplode');
@@ -1960,7 +2420,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="074bf0a2">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="76eed12e">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

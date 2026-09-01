@@ -20,12 +20,13 @@ export class SchematicChrome {
    * @param {object} opts.subject         subject descriptor, see src/subjects/*
    * @param {object} opts.handlers        { onView, onMode, onExplode, onAzimuth, onElevation, onExport, onBust }
    */
-  constructor({ root, subject, subjects = [], views, joints = [], handlers = {} }) {
+  constructor({ root, subject, subjects = [], views, joints = [], toggles = [], handlers = {} }) {
     this.root = root;
     this.subject = subject;
     this.subjects = subjects;
     this.views = views;
     this.joints = joints;
+    this.toggles = toggles;
     this.handlers = handlers;
     this.readoutEls = new Map();
     this.calloutObjects = [];
@@ -192,6 +193,27 @@ export class SchematicChrome {
         joint.label, joint.min, joint.max, joint.step, joint.value,
         (v) => this.handlers.onJoint?.(joint.key, v),
       ));
+    }
+
+    /**
+     * One button per declared toggle — the boolean counterpart of the joint sliders above.
+     *
+     * A joint is a continuous control; some things a subject wants to expose are not. The
+     * TERRAFORMER prints a structure that the operator has to be able to take away, and there
+     * was no shape of control for that: `b` and `c` are booleans, but they belong to the viewer
+     * (display mode, collision proxy) and are hardcoded here. This is the first one that belongs
+     * to the SUBJECT, so it arrives the way joints do — as data on the scene graph — and the
+     * chrome learns "a subject may declare toggles", not "the terraformer has a building".
+     *
+     * It reuses `_optionRow` unchanged: a label, buttons, an `on` class. Nothing new to style.
+     */
+    if (this.toggles.length) {
+      box.appendChild(this._optionRow(
+        'SHOW',
+        this.toggles.map((t) => [t.key, t.label]),
+        (key, button) => this.handlers.onToggle?.(key, button.classList.toggle('on')),
+        (key) => !!this.toggles.find((t) => t.key === key)?.value,
+      ).row);
     }
 
     box.appendChild(this._optionRow(

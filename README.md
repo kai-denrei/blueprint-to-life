@@ -4,12 +4,13 @@ Machines and structures built entirely from code as Three.js scene graphs, rende
 as a technical blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different
 display mode.
 
-Twelve subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
+Fourteen subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
 **Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
 (a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, the **RA-6** six-axis
 robot arm, the **GS-3** three-axis gimbal platform, **SERVER01** (a 42U compute rack), the
-**CX-20** intermodal container, the **FD-4** additive fabrication drone, and an M777-pattern
-155 mm towed howitzer — plus a primitives rig for debugging the shader.
+**CX-20** intermodal container, the **FD-4** additive fabrication drone, the **GT-9** transit
+gate, the **TF-3000** construction gantry, and an M777-pattern 155 mm towed howitzer — plus a
+primitives rig for debugging the shader.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -53,6 +54,13 @@ npm start             # http://127.0.0.1:5173/
   four rotor masts and four antigravity emitters, a ram-fed 27.6 L reservoir, a cranked print
   boom, and no position control at all — where it hovers is derived from how much feedstock it
   has already spent
+- `/?subject=portal` — GT-9, a transit gate: three concentric rows of armour segments, two of
+  them counter-rotating, eight capacitor pods with blue cores on the rim — and a 3.60 m clear
+  aperture with **no geometry in it at all**, because whatever appears there is composited
+  downstream in another application
+- `/?subject=terraformer` — TF-3000, a 36 m planetary construction gantry: three prismatic axes
+  (rail travel, beam traverse, a two-stage telescoping mast), a four-axis extrusion arm, two
+  material silos — and the building it is printing, which you can **switch off**
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -114,6 +122,8 @@ src/gimbal/     asset: GS-3 gimbal platform
 src/server/     asset: SERVER01 compute rack
 src/container/  asset: CX-20 intermodal container
 src/fabricator/ asset: FD-4 fabrication drone (and the pier it is printing)
+src/portal/     asset: GT-9 transit gate
+src/terraformer/ asset: TF-3000 construction gantry (and the building it prints)
 src/howitzer/   asset: 155 mm towed howitzer
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
@@ -125,7 +135,7 @@ server/serve.js static server with the cache-control split the busting layer nee
 
 Asset code (`src/lib`, `src/tank`, `src/mkcx`, `src/heptat`, `src/heptapod`, `src/headless`,
 `src/motopod`, `src/robotarm`, `src/gimbal`, `src/server`, `src/container`, `src/fabricator`,
-`src/howitzer`) must not import from display code, and
+`src/portal`, `src/terraformer`, `src/howitzer`) must not import from display code, and
 display code (`src/render`, `src/camera`, `src/chrome`) must not import from any specific
 asset. `npm test` fails the build if either happens.
 
@@ -183,6 +193,22 @@ Subjects may also declare `afterArticulate(root)` for fix-ups the scene graph ca
 The howitzer needs one: its two road wheels are a single `InstancedMesh` (the same contract the
 tank's running gear follows) but they are mounted on two independently hinging trails, and
 instance matrices cannot be inherited from different parents.
+
+Subjects may also declare **toggles** — the boolean half of the same contract, added by the
+TF-3000:
+
+```js
+root.userData.toggles = [
+  { key: 'structure', label: 'STRUCTURE', node: 'Structure_Group', value: true },
+];
+```
+
+A joint is a continuous control; some things a subject needs to expose are not. That gantry
+prints a building the operator has to be able to take away, and there was no shape of control for
+it: `b` and `c` are booleans, but they belong to the *viewer* (display mode, collision proxy) and
+are hardcoded in `main.js`. This is the first one that belongs to the subject, so it arrives the
+way joints do. The chrome grows one row and reuses the option row it already had; `main.js` learns
+that a toggle is "a named node that is shown or hidden" and nothing about what any one means.
 
 The FD-4 added the display-side twin of that, `derived(jointValues)` — a map of extra readouts a
 subject computes rather than reads off a slider. Same shape of hook and the same justification:
@@ -870,6 +896,208 @@ when it declined to instance its feet.
 Cutting `count` back to what has been extruded, rather than hiding the rest by scaling or moving
 it, has a side effect worth keeping: an instance past `count` is neither drawn nor submitted, so
 the TRIANGLES readout falls as the tank refills. The instrumentation shows the print happening.
+
+### What the gate changed: the hole is the deliverable
+
+The thirteenth subject is the first whose specification includes something that must **not**
+exist. Every one before it was described by what it has — a turret, eight legs, twenty-eight
+sleds, a printed pier. The brief here is a heavy industrial ring with an empty centre, because
+whatever appears in that centre is composited downstream in a different application. So the hole
+is not an absence of modelling effort. It is the thing being handed over, and it gets the same
+treatment as any other part of the deliverable.
+
+**The aperture is a transform, not a mesh.** `Aperture_Volume` is an empty `Object3D` at the bore
+centre whose *scale* is the clear cylinder — `(radius, radius, halfDepth)`. That is the whole
+interface. It survives export as TRS like any other node, so the other application reads the
+volume off the node rather than off this README:
+
+```
+Aperture_Volume   scale [1.8, 1.8, 0.58]   no mesh   parent Ring_Group
+```
+
+It cannot drift from the geometry, because the same `apertureRadius()` that scales it also lays
+out the liner that bounds it. There is exactly one number in the subject that means "clear bore",
+and everything else is stacked outward from it.
+
+It is deliberately *not* a hidden proxy mesh. The collision proxy is one of those, and it costs
+the shared contract an exemption — `isCollision` meshes are skipped by the UV and part-id checks.
+A second kind of invisible mesh would mean a second exemption, and a checklist that grows a hole
+per subject stops describing anything. A node with a scale needs no exemption at all.
+
+**What guarantees the hole is a test, not a feature.** No vertex anywhere in the graph may lie
+inside that cylinder, swept over the entire articulation envelope — 200 poses across gate
+bearing, both rotors and the vane fan, walked instance by instance so an intrusion hidden in
+instance 11 of 18 cannot slip through. The check also asserts the bore is not merely clear but
+*exactly* bounded: the closest geometry sits at r = 1.80000, so a liner that drifted outboard
+would fail rather than quietly making the aperture wider than the drawing says.
+
+That is worth stating plainly against the previous subject. The FD-4 earned a display-layer hook;
+this one earned an assertion and changed no viewer code at all. Not every requirement is a
+capability, and the difference is whether anything needs to *behave* differently or merely to
+*be* true.
+
+**The collision proxy cannot bound this subject.** Every other proxy is a box around the whole
+machine. A box around a ring contains the bore — it would mark as solid the one volume the gate
+exists to keep empty, and anything pathing against it would refuse to walk through the gate. The
+proxy is the plinth footprint. The RA-6 set this precedent for an arm's swept volume; here the
+reason is sharper, and there is an invariant that the proxy does not contain the aperture centre.
+
+#### The generator that was missing
+
+Everything on this subject is an arc, and nothing in `src/lib/geometry.js` could sweep one.
+`extrudeProfile` pushes a profile along a straight line; a ring segment pushes one along a
+circular path, which splays the end caps and turns every side quad into a frustum of a cone. A
+portal built from straight extrusions rotated into place would carry its curvature in transforms
+rather than in its geometry and would show a facet at every seam.
+
+`arcSegment` is that sweep, and it is a sibling of the extruder rather than a `radius` option on
+it — the same argument the shared `MODELS` contract has already made twice, applied to a
+generator: eleven existing subjects should not share a code path for a case none of them use.
+
+Winding was the real cost. The two end caps face opposite ways and the side band is conical, so
+"it looks right in the iso view" is not evidence — and an inward-wound solid renders perfectly in
+the blueprint pass (which draws `DoubleSide`) while turning black in the game path. That is the
+container's plane-versus-sheet trap in a new costume. The check is Pappus's theorem: a swept
+solid's volume is its profile area times the distance the centroid travels, so the test knows
+what the answer *should* be rather than what it was last time. Signed volume comes out positive
+and within 0.1%, and every profile the gate actually feeds the generator is checked too — a
+concave one would fan its caps through the solid and flip the sign.
+
+#### One accent channel, on purpose
+
+The accent story runs backwards here. Channels grew from a boolean (MK-CX) to a named channel
+(Hepta-T) to four (SERVER01) because successive subjects wanted different hues. The brief for the
+gate asks for blue, so everything lit is on channel 2 and there is an invariant checking the
+*negative* — nothing on this subject may be on any other channel. A second hue would have been
+the drawing inventing a distinction the machine does not have.
+
+#### Three things the build turned up
+
+**Buttresses that narrowed as they descended.** The legs were pinned to the ring at 217°, which
+is outboard of the pads they land on, so they leaned *inward* going down and the base rendered as
+one solid wedge instead of two struts. A buttress that does not widen its stance is not bracing
+anything. Both ends are derived — the head from the armour's outer radius at the declared leg
+angle, the foot from the plinth — so the invariant checks the head actually lands on the armour
+rather than in the air, which is how the MK-CX's fenders failed.
+
+**Accents buried inside the armour.** The rotor light strips were placed 12 mm outboard of each
+row's inner face, which is *inside* the segment: they rendered as nothing whatever, in both
+display modes, and the ring looked unpowered. There is only 40 mm of running clearance inboard of
+a rotor and an accent cannot live in it. They moved to the ring faces, where a row this deep has
+room to show something — one InstancedMesh carrying twice the count, half proud of the front face
+and half of the rear.
+
+**A single band of blocks reads as a cog.** One row of identical boxes at the segment pitch made
+the ring look like gear teeth. A second, finer row of service boxes on the front face at a count
+sharing no factor with the segmentation (20 against 8) drifts in and out of phase all the way
+round, so the rim never repeats. Same argument the Hepta-T's stowage makes about symmetry reading
+as a render, applied to a shape that is symmetric by construction.
+
+### What the gantry changed: a control that is not a slider
+
+The fourteenth subject is a 36 m portal printer, and its brief added one thing nothing before it
+had asked for: **the structure it is building has to be toggleable**. Not scrubbable — the FD-4
+already showed that, cutting an InstancedMesh's `count` back as its tank drained — but on and
+off, so you can look at the machine alone and export it alone.
+
+That is a boolean, and until now a boolean control could only be a *viewer* one. `b` toggles
+display mode, `c` toggles the collision proxy, and both are hardcoded in `main.js` because both
+belong to the viewer rather than to any subject. So `userData.toggles` arrives alongside
+`userData.joints`, in the same shape and for the same reason, and the chrome reuses the option
+row it already had for views and modes. Nothing new to style, ~25 lines of display code, and a
+subject that declares none is unaffected — which is the test every display-layer addition in this
+project has had to pass since the MK-CX.
+
+One detail is where a toggle could easily have lied. `exportGLB` passes `onlyVisible: false`,
+which it must: the collision proxy is always hidden and has to ship. So merely *hiding* a
+toggled-off group would have exported it anyway, and the button would mean one thing on screen
+and another in the file. Off nodes are **detached** for the duration of the export instead:
+
+```
+structure ON  -> GLB contains Structure_Group
+structure OFF -> GLB does not, and still contains Travel_Carriage and Gantry_Collision
+after export  -> reattached
+```
+
+Verified by spying on the real export path rather than by calling the exporter directly — the
+first version of that check called `GLTFExporter.parse` itself, bypassed the detach entirely, and
+reported a passing result for code that did nothing.
+
+#### The machine has two sets of axis names, and they disagree
+
+A gantry printer calls its long travel X, its cross-traverse Y and its lift Z. This project's
+convention is +X right, +Y up, +Z forward. Both are right, and they map across each other:
+
+| machine | scene | what moves |
+|---|---|---|
+| X travel | Z | the whole gantry, on rails |
+| Y traverse | X | the carriage, along the beam |
+| Z lift | −Y | the telescoping mast |
+
+The joint *labels* are the machine's names, because that is what an operator reads; the graph is
+in the scene's. Same indirection the howitzer's elevation joint already makes, where `rotation.x`
+positive pitches a gun *down* and the gunner's number has the opposite sign. Keeping both and
+stating the mapping is the honest option; silently picking one is how a drawing ends up
+describing a machine nobody can drive.
+
+The reference sheet also contradicts itself, and the drawing says so rather than copying it. It
+claims a 120 × 80 × 20 m build volume. 120 and 20 are reproducible — the rail travel and the
+height to the beam — but 80 is not: a carriage cannot traverse further than the beam it rides,
+and the gantry the sheet draws is a 36 m span. The instrumentation quotes 27.40 m, which is what
+the geometry gives. Same choice the CX-20 made about ISO 668.
+
+#### Four things the build turned up, three of them found by tests
+
+**A prismatic joint is assigned, not offset.** `applyArticulation` writes `object.position[axis] =
+v` for a prismatic target, so a joint declaring `from: 0, to: -stroke` does not slide a node — it
+teleports it to its parent's origin and slides from there, wiping whatever structural offset the
+builder set. The mast snapped 2.75 m upward the instant the LIFT slider was touched. The rest pose
+looked perfect and nothing on screen said otherwise; what caught it was a closed-form
+`nozzleHeight()` compared against the built graph. Both the joint's endpoints and the builder's
+rest seating now come from one `mastStageY()`, so they cannot disagree.
+
+**The rest pose was one the viewer could not produce — again.** The FD-4 left its reservoir ram at
+zero while the CHARGE slider defaulted elsewhere; this left both mast stages fully retracted while
+LIFT defaulted to 38%. Rotational joints get this right by accident because they are authored from
+`rest` already. Prismatic ones have to be told, and that is now two subjects in a row.
+
+**An angle mirrored across a pair needs a sign, and the sign was wrong.** Each tower's aft
+outrigger pointed at the sky. Two endpoints cannot do that — the direction *is* the difference
+between them — so the legs are derived from where they spring and where they land, which is the
+third subject to reach for that after the MK-CX's fenders and the GT-9's buttresses.
+
+**`registerPart` snapshots `position` as the explode rest pose.** A handrail positioned *after*
+registering sprang back to the origin the first time anyone touched EXPLODE. The tank made the
+mirror-image mistake with a cloned geometry: clone before registering, position before
+registering.
+
+#### The camera had a 7-metre tank baked into it
+
+This is the one that was not in the subject at all. `OrbitControls.maxDistance` was `40` and the
+frustum depths were absolute numbers, all tuned to the first vehicle. The TF-3000's declared frame
+radius asks for a camera 161 m back; OrbitControls clamps on every update, so it was quietly
+pulled to 40 and the machine rendered from inside its own gantry. Nothing reported it — the camera
+simply arrived somewhere other than where it was told.
+
+The limits now scale with the subject's declared radius, and with `Math.max` rather than a
+straight multiple: deriving them outright would have *tightened* them for every small subject —
+the two-wheeler's frame radius is 2.55, and six times that is a shorter leash than it has today.
+Loosening for the big case without touching the small one is the whole fix. Same shape of finding
+as `instancedGear` and the collision-proxy name list: display code carrying an assumption from the
+subject that happened to come first.
+
+#### What the arc generator was worth
+
+The printed building's rounded corners are `arcSegment`, the sweep the GT-9 added one subject
+earlier, turned flat with a single `rotateX(-90)` and fed the same section as the straight runs.
+It needed no new parameter to serve a completely different shape, which is the only real evidence
+that it belonged in `src/lib` rather than in the gate's own folder.
+
+Every one of the eleven courses is the same plan at a different height, so the whole wall is one
+merged geometry instanced up the Y axis — and it is the cleanest instancing case in the project
+after the FD-4's bead. The section is pinched top and bottom for the reason that bead is: butted
+rectangular courses share coplanar faces and one part id, and would have rendered eleven layers as
+one blank wall.
 
 ## Deployed
 

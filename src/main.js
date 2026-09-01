@@ -57,6 +57,25 @@ const views = new ViewController(canvas, {
 const joints = root.userData.joints || [];
 const jointValues = Object.fromEntries(joints.map((j) => [j.key, j.value]));
 
+/**
+ * Toggles are whatever the subject declared, in the same spirit as joints: main.js knows the
+ * SHAPE of a toggle — a named node that is shown or hidden — and nothing about what any one of
+ * them means. Resolved once, for the reason the joint targets are.
+ */
+const toggles = (root.userData.toggles || [])
+  .map((t) => ({ ...t, object: root.getObjectByName(t.node), on: t.value !== false }))
+  .filter((t) => {
+    if (!t.object) console.warn(`[toggles] ${t.key}: no node named ${t.node}`);
+    return t.object;
+  });
+
+function setToggle(key, on) {
+  const t = toggles.find((x) => x.key === key);
+  if (!t) return;
+  t.on = on;
+  t.object.visible = on;
+}
+
 const state = {
   mode: 'blueprint',
   explode: 0,
@@ -74,6 +93,7 @@ const chrome = new SchematicChrome({
   subjects: subjectList(),
   views: VIEWS,
   joints,
+  toggles,
   handlers: {
     onView: (key) => { views.setView(key); chrome.setActiveView(key); },
     onMode: (key) => setMode(key),
@@ -83,6 +103,7 @@ const chrome = new SchematicChrome({
       views.setFrameScale(1 + v * 0.95);
     },
     onJoint: (key, value) => { jointValues[key] = value; },
+    onToggle: (key, on) => setToggle(key, on),
     onSubject: (key) => {
       const next = new URL(location.href);
       next.searchParams.set('subject', key);
@@ -96,6 +117,7 @@ const chrome = new SchematicChrome({
     onDumpGraph: () => dumpGraph(),
   },
 });
+for (const t of toggles) setToggle(t.key, t.on);
 chrome.buildCallouts(root);
 chrome.setActiveView(views.viewKey);
 chrome.setActiveMode(state.mode);
@@ -265,6 +287,22 @@ function exportGLB() {
   const proxyWasVisible = proxy?.visible;
   if (proxy) proxy.visible = true;    // the proxy must survive export; visibility is display state
 
+  /**
+   * A toggle that is OFF is detached for the duration of the export, not merely hidden.
+   *
+   * `onlyVisible: false` is load-bearing above — the collision proxy is always hidden and has to
+   * ship — so hiding a toggled-off group would export it anyway and the button would mean two
+   * different things in the viewer and in the file. Detaching makes "off" mean off in both.
+   * Generic over whatever the subject declared; a subject with no toggles detaches nothing.
+   */
+  const detached = toggles.filter((t) => !t.on).map((t) => ({ node: t.object, parent: t.object.parent }));
+  for (const d of detached) d.parent.remove(d.node);
+  const restore = () => {
+    for (const d of detached) d.parent.add(d.node);
+    if (proxy) proxy.visible = proxyWasVisible;
+    applyExplode(root, savedExplode);
+  };
+
   new GLTFExporter().parse(root, (result) => {
     const blob = new Blob([result], { type: 'model/gltf-binary' });
     const a = document.createElement('a');
@@ -272,12 +310,10 @@ function exportGLB() {
     a.download = `${subject.id}_${buildToken}.glb`;
     a.click();
     URL.revokeObjectURL(a.href);
-    if (proxy) proxy.visible = proxyWasVisible;
-    applyExplode(root, savedExplode);
+    restore();
   }, (err) => {
     console.error('[export] failed', err);
-    if (proxy) proxy.visible = proxyWasVisible;
-    applyExplode(root, savedExplode);
+    restore();
   }, {
     binary: true,
     onlyVisible: false,

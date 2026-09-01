@@ -35,8 +35,22 @@ export class ViewController {
     this.onCrossfade = opts.onCrossfade || (() => {});
     this.aspect = 1;
 
-    this.perspective = new THREE.PerspectiveCamera(34, 1, 0.5, 260);
-    this.orthographic = new THREE.OrthographicCamera(-1, 1, 1, -1, -80, 260);
+    /**
+     * Frustum depths scale with the subject, because they used not to and it broke.
+     *
+     * These were absolute numbers tuned to a 7-metre tank, which was correct for eleven subjects
+     * and then silently wrong for the first one an order of magnitude bigger: the TF-3000 is a
+     * 44 m gantry, and its declared frame radius asked for a camera 161 m back.
+     *
+     * `Math.max` rather than a straight multiple on purpose. Deriving these outright would have
+     * TIGHTENED them for every small subject — the two-wheeler's frame radius is 2.55, and six
+     * times that is a shorter leash than it has today. Loosening for the big case without
+     * touching the small one is the whole fix.
+     */
+    this.perspective = new THREE.PerspectiveCamera(34, 1, 0.5, Math.max(260, this.radius * 9));
+    this.orthographic = new THREE.OrthographicCamera(
+      -1, 1, 1, -1, Math.min(-80, this.radius * -3), Math.max(260, this.radius * 9),
+    );
 
     this.controls = {
       perspective: new OrbitControls(this.perspective, domElement),
@@ -49,8 +63,12 @@ export class ViewController {
       c.enabled = false;
     }
     this.controls.orthographic.enableRotate = false; // an elevation that can be rotated is not an elevation
-    this.controls.perspective.minDistance = 4;
-    this.controls.perspective.maxDistance = 40;
+    // Orbit limits, likewise scaled. `maxDistance = 40` was the bug: OrbitControls clamps on
+    // every update, so a subject that asked to be framed from 161 m was quietly pulled to 40 and
+    // rendered from inside its own gantry. Nothing reported it — the camera simply arrived
+    // somewhere else than it was told.
+    this.controls.perspective.minDistance = Math.min(4, this.radius * 0.3);
+    this.controls.perspective.maxDistance = Math.max(40, this.radius * 6);
 
     this.viewKey = null;
     this.camera = this.perspective;
@@ -86,7 +104,7 @@ export class ViewController {
 
     const dir = new THREE.Vector3(...view.dir).normalize();
     const dist = view.projection === 'orthographic'
-      ? 60
+      ? Math.max(60, this.radius * 2.2)
       : this.radius * 2.6 * this.frameScale * this._aspectFit();
     const position = this.target.clone().addScaledVector(dir, dist);
 
