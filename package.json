@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Procedural tank scene graph + blueprint schematic viewer (Three.js, no build step)",
+  "description": "Procedural scene graphs of machines and structures + blueprint schematic viewer (Three.js, no build step)",
   "scripts": {
     "start": "node server/serve.js",
     "vendor": "node scripts/vendor-three.js",

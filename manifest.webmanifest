@@ -1,7 +1,7 @@
 {
-  "name": "Blueprint to Life \u2014 Procedural Vehicle Schematics",
+  "name": "Blueprint to Life \u2014 Procedural Machine Schematics",
   "short_name": "Blueprint",
-  "description": "Vehicles built entirely from code as Three.js scene graphs, rendered as technical blueprint schematics and as game-ready PBR assets.",
+  "description": "Machines and structures built entirely from code as Three.js scene graphs, rendered as technical blueprint schematics and as game-ready PBR assets.",
   "id": "./",
   "start_url": "./?src=pwa",
   "scope": "./",

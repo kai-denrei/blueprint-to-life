@@ -1960,7 +1960,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="8f08c128">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="074bf0a2">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];
@@ -1973,6 +1973,7 @@ console.log('\nPWA');
 
 const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
 const manifest = JSON.parse(readFileSync(join(ROOT, 'manifest.webmanifest'), 'utf8'));
+const offlineHtml = readFileSync(join(ROOT, 'offline.html'), 'utf8');
 
 test('service worker cache key matches the build token in index.html', () => {
   // This is the load-bearing one. scripts/bust.sh stamps the SW token, but that step is a
@@ -2064,7 +2065,14 @@ test('no root-absolute URLs anywhere the site is addressed from', () => {
   // correct in every one of them.
   const offenders = [];
 
-  for (const m of html.matchAll(/(?:src|href)="(\/[^\/][^"]*)"/g)) offenders.push(`index.html: ${m[1]}`);
+  // Both pages the site serves, not just the one anyone looks at during development. This
+  // check listed index.html, the SW's precache and registration, and the manifest — and missed
+  // `offline.html`, which is itself a page served from the same subpath. It had carried a
+  // root-absolute favicon since it was written; the fallback page's icon 404'd on Pages and
+  // nowhere else, and nothing said so. A file-by-file allowlist grows exactly this kind of hole.
+  for (const [name, source] of [['index.html', html], ['offline.html', offlineHtml]]) {
+    for (const m of source.matchAll(/(?:src|href)="(\/[^\/][^"]*)"/g)) offenders.push(`${name}: ${m[1]}`);
+  }
   for (const m of html.matchAll(/"three(?:\/addons\/)?":\s*"(\/[^"]*)"/g)) offenders.push(`importmap: ${m[1]}`);
 
   const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');

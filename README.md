@@ -1,7 +1,8 @@
 # blueprint-to-life
 
-Vehicles built entirely from code as Three.js scene graphs, rendered two ways: as a technical
-blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different display mode.
+Machines and structures built entirely from code as Three.js scene graphs, rendered two ways:
+as a technical blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different
+display mode.
 
 Twelve subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
 **Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
