@@ -17,6 +17,7 @@ import { buildTank } from '../src/tank/buildTank.js';
 import { DIM, wheelLayout } from '../src/tank/dimensions.js';
 import { buildMkcx } from '../src/mkcx/buildMkcx.js';
 import { CXDIM } from '../src/mkcx/dimensions.js';
+import { buildMkcx2 } from '../src/mkcx2/buildMkcx2.js';
 import { buildHeptat } from '../src/heptat/buildHeptat.js';
 import { HTDIM, rng } from '../src/heptat/dimensions.js';
 import { buildHeptapod, updateHeptapodStance } from '../src/heptapod/buildHeptapod.js';
@@ -72,6 +73,7 @@ function test(name, fn) {
 
 const tank = buildTank();
 const mkcx = buildMkcx();
+const mkcx2 = buildMkcx2();
 const heptat = buildHeptat();
 const heptapod = buildHeptapod();
 const headless = buildHeadless();
@@ -130,6 +132,19 @@ const MODELS = [
                'Nacelle_L', 'Nacelle_R', 'Secondary_Turrets',
                'Secondary_L_Pivot', 'Secondary_R_Pivot',
                'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
+    pivots: ['Turret_Pivot', 'Barrel_Pivot',
+             'Secondary_L_Pivot', 'Secondary_R_Pivot',
+             'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
+  },
+  {
+    // The MK-CX with the top taken off: same contract, plus the rack it carries for the game.
+    name: 'mkcx2', root: mkcx2, rootName: 'MKCX2_Root', collision: 'Hull_Collision', instancedGear: false, armed: true,
+    required: ['Hull_Mesh', 'Hull_Collision', 'Turret_Pivot', 'Turret_Mesh',
+               'Barrel_Pivot', 'Barrel_Mesh', 'Details_Group', 'Hover_Gear',
+               'Nacelle_L', 'Nacelle_R', 'Secondary_Turrets',
+               'Secondary_L_Pivot', 'Secondary_R_Pivot',
+               'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot',
+               'ShellRack_Mount', 'Shell_Socket_1', 'Shell_Socket_9', 'Deck_Glow_1', 'Deck_Glow_2'],
     pivots: ['Turret_Pivot', 'Barrel_Pivot',
              'Secondary_L_Pivot', 'Secondary_R_Pivot',
              'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],

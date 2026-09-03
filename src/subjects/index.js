@@ -1,5 +1,6 @@
 import { MKVI_SUBJECT } from './mkvi.js';
 import { MKCX_SUBJECT } from './mkcx.js';
+import { MKCX2_SUBJECT } from './mkcx2.js';
 import { HEPTAT_SUBJECT } from './heptat.js';
 import { HEPTAPOD_SUBJECT } from './heptapod.js';
 import { HEADLESS_SUBJECT } from './headless.js';
@@ -23,6 +24,7 @@ import { BOX_SUBJECT } from './box.js';
 export const SUBJECTS = {
   mkvi: { label: 'MK-VI', subject: MKVI_SUBJECT },
   mkcx: { label: 'MK-CX', subject: MKCX_SUBJECT },
+  mkcx2: { label: 'MK-CX/2', subject: MKCX2_SUBJECT },
   heptat: { label: 'HEPTA-T', subject: HEPTAT_SUBJECT },
   heptapod: { label: 'HEPTAPOD', subject: HEPTAPOD_SUBJECT },
   headless: { label: 'BP-H01', subject: HEADLESS_SUBJECT },
