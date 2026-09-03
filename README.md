@@ -4,13 +4,14 @@ Machines and structures built entirely from code as Three.js scene graphs, rende
 as a technical blueprint schematic, and as a game-ready PBR asset. Same hierarchy, different
 display mode.
 
-Fourteen subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
+Fourteen generated subjects so far — the **MK-VI** main battle tank, the **MK-CX** hover tank, the
 **Hepta-T** 6×6 cargo transport, the **Heptapod Walker** eight-legged sentry, **BP-Headless01**
 (a headless bipedal exoframe), the **Moto // Pod** hubless monocycle, the **RA-6** six-axis
 robot arm, the **GS-3** three-axis gimbal platform, **SERVER01** (a 42U compute rack), the
 **CX-20** intermodal container, the **FD-4** additive fabrication drone, the **GT-9** transit
 gate, the **TF-3000** construction gantry, and an M777-pattern 155 mm towed howitzer — plus a
-primitives rig for debugging the shader.
+primitives rig for debugging the shader, and one imported subject: the **MKCX-2**, the MK-CX/2
+as it came back from the game.
 
 The scene graph is the deliverable. The blueprint look is a post-process on top of it and is
 never baked into the asset — toggling display modes touches nothing under `src/tank/` or
@@ -61,6 +62,11 @@ npm start             # http://127.0.0.1:5173/
 - `/?subject=terraformer` — TF-3000, a 36 m planetary construction gantry: three prismatic axes
   (rail travel, beam traverse, a two-stage telescoping mast), a four-axis extrusion arm, two
   material silos — and the building it is printing, which you can **switch off**
+- `/?subject=mkcx2game` — **MKCX-2**, the MK-CX/2 as the game dresses it: the first subject
+  that is not built here. It is `design/game-exports/mkcx2_game_03fdc11d.glb`, the reverse
+  export from spherical-stalberg-grid — the cast model, nine shells in the rear deck, three
+  heat sleeves, health-tinted materials, edge outlines as glTF lines — put back on the bench
+  at the authored scale, with the MK-CX/2's own joints driving the pivots the game kept
 - `/?subject=howitzer` — 155 mm towed howitzer
 - `/?subject=box` — shader isolation rig: a box, a sphere, and two flush plates
 
@@ -125,6 +131,8 @@ src/fabricator/ asset: FD-4 fabrication drone (and the pier it is printing)
 src/portal/     asset: GT-9 transit gate
 src/terraformer/ asset: TF-3000 construction gantry (and the building it prints)
 src/howitzer/   asset: 155 mm towed howitzer
+src/lib/gltfImport.js  a game's reverse export adopted as a subject — names, part ids, the pose undone
+design/game-exports/   the reverse exports themselves (.glb, committed; the one exception to *.glb)
 src/render/     display modes — blueprint G-buffer + composite, PBR lighting
 src/camera/     ortho elevations + perspective iso, snap-and-ease between them
 src/chrome/     schematic overlay (title block, legend, instruments, callouts)
@@ -218,6 +226,40 @@ bead on the bed, courses finished — are functions of CHARGE with no control of
 panel quoting a build-time constant for them would have been lying by the second frame. `main.js`
 merges a map of strings and a subject that declares no hook loses nothing, so it stays as
 ignorant of what it is drawing as the joint list leaves it.
+
+## Importing a game export
+
+The MKCX-2 (`?subject=mkcx2game`) is the first subject that is not generated. It is the
+MK-CX/2 after a round trip: exported from this viewer, cast and dressed by the game, exported
+back with the game's EXPORT button, and committed under `design/game-exports/`. The file is
+what is being looked at; the authored subject beside it in the SUBJECT row is what it was
+made from, and the sibling README there is explicit that these are for looking at, not
+building from.
+
+Putting a file on the bench cost four things, and each is a rule rather than a special case:
+
+- **`build()` may be asynchronous.** A builder returns a graph; a file has to be fetched
+  first. `main.js` awaits `build()` at top level and stays ignorant of which it was handed.
+- **The import adds only what the display needs to address the graph.** The game keeps the
+  pivots' names (that is what the joints drive) and drops the mesh names, so an unnamed mesh is
+  named for the pivot it hangs from and the material it was cast with — `Turret_Pivot_M_Turret`,
+  `Barrel_Pivot_Dressing` for a heat sleeve the game added with no material name at all. Every
+  mesh gets a `partId`, or the id edge between two flush casts never appears. Nothing in the
+  file's geometry, materials or hierarchy is changed.
+- **The game's pose is undone, and recorded.** The export carries the unit as the game had it:
+  at ×0.2345 in its world, nudged and turned by a fraction of a degree. The bench inverts that
+  wrapper so the authored root lands back at identity, and the DATA panel quotes the scale and
+  heading it found rather than a typed constant.
+- **The blueprint pass hides line primitives.** The game's edge outlines are glTF `LINES`, and
+  the pass derives its own edges from depth, normal and id. Drawing a normal-less sliver over
+  every edge it was about to find was the alternative. They come back in the game view, where
+  they belong.
+
+What the import deliberately does not add: explode vectors (where each part would fly to is a
+fact the builder knows and a merged cast does not — the slider does nothing here) and a
+collision proxy (the game drops it, so there is none to show). The invariant suite asserts
+the file is served, every legend name resolves, the joints all land, and the scale comes back
+out; it asserts none of the MODELS contract, because the file was never party to it.
 
 ## How the blueprint pass works
 

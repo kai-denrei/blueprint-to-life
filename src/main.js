@@ -36,7 +36,11 @@ const scene = new THREE.Scene();
 scene.name = 'Scene';
 
 // The asset. Everything below this line is display.
-const root = subject.build();
+//
+// `build()` may return the graph or a promise of one. Every generated subject is synchronous;
+// an imported one has a file to fetch first, and top-level await is the one line that lets
+// main.js stay ignorant of which it was handed.
+const root = await subject.build();
 scene.add(root);
 
 const lighting = createLighting();

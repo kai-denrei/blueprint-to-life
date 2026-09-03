@@ -29,8 +29,19 @@ export function buildMkcx2() {
   root.add(buildHullDetails(M));
   root.position.y = D.hover.gap;
 
+  root.userData.joints = mkcx2Joints();
+  return root;
+}
+
+/**
+ * The MK-CX/2's joint list, on its own so a second graph with the same pivot names can carry
+ * the same controls. The reverse export from the game keeps Turret_Pivot, Barrel_Pivot and the
+ * four secondary pivots exactly where the builder put them, so the bench drives it with these
+ * rather than a copy that would drift the first time a limit changed here.
+ */
+export function mkcx2Joints() {
   const sec = D.secondary.limits;
-  root.userData.joints = [
+  return [
     {
       key: 'azimuth', label: 'AZIMUTH', unit: '°', min: -180, max: 180, step: 1, value: 0,
       targets: [{ node: 'Turret_Pivot', axis: 'y', from: -180, to: 180 }],
@@ -57,7 +68,6 @@ export function buildMkcx2() {
       ],
     },
   ];
-  return root;
 }
 
 // --- hull ------------------------------------------------------------------

@@ -18,6 +18,8 @@ const files = [
   ['examples/jsm/controls/OrbitControls.js', 'addons/controls/OrbitControls.js'],
   ['examples/jsm/renderers/CSS2DRenderer.js', 'addons/renderers/CSS2DRenderer.js'],
   ['examples/jsm/exporters/GLTFExporter.js', 'addons/exporters/GLTFExporter.js'],
+  ['examples/jsm/loaders/GLTFLoader.js', 'addons/loaders/GLTFLoader.js'],
+  ['examples/jsm/utils/BufferGeometryUtils.js', 'addons/utils/BufferGeometryUtils.js'],   // GLTFLoader imports it
 ];
 
 for (const [from, to] of files) {

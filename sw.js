@@ -13,7 +13,7 @@
  * shows a toast; skipWaiting only runs when the user says so. Reloading a WebGL app out from
  * under someone mid-orbit is exactly the thing that makes PWAs feel broken.
  */
-const CB_TOKEN = '76eed12e';
+const CB_TOKEN = '43f5a194';
 const CACHE = `blueprint-to-life-${CB_TOKEN}`;
 const OFFLINE_URL = './offline.html';
 
@@ -51,10 +51,13 @@ const PRECACHE = [
   './src/howitzer/buildHowitzer.js',
   './src/howitzer/dimensions.js',
   './src/lib/geometry.js',
+  './src/lib/gltfImport.js',
   './src/lib/materials.js',
   './src/lib/parts.js',
   './src/mkcx/buildMkcx.js',
   './src/mkcx/dimensions.js',
+  './src/mkcx2/buildMkcx2.js',
+  './src/mkcx2/dimensions.js',
   './src/motopod/buildMotopod.js',
   './src/motopod/dimensions.js',
   './src/portal/buildPortal.js',
@@ -76,6 +79,8 @@ const PRECACHE = [
   './src/subjects/howitzer.js',
   './src/subjects/index.js',
   './src/subjects/mkcx.js',
+  './src/subjects/mkcx2.js',
+  './src/subjects/mkcx2game.js',
   './src/subjects/mkvi.js',
   './src/subjects/motopod.js',
   './src/subjects/portal.js',
@@ -88,7 +93,9 @@ const PRECACHE = [
   './src/terraformer/dimensions.js',
   './vendor/three/addons/controls/OrbitControls.js',
   './vendor/three/addons/exporters/GLTFExporter.js',
+  './vendor/three/addons/loaders/GLTFLoader.js',
   './vendor/three/addons/renderers/CSS2DRenderer.js',
+  './vendor/three/addons/utils/BufferGeometryUtils.js',
   './vendor/three/three.core.js',
   './vendor/three/three.module.js',
   './icons/apple-touch-icon-120.png',

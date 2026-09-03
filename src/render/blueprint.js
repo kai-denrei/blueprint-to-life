@@ -318,6 +318,14 @@ export class BlueprintRenderer {
     const prevOverride = scene.overrideMaterial;
     const prevBackground = scene.background;
 
+    // Line primitives are somebody else's outline — a game export carries its edges as glTF
+    // LINES — and this pass derives its own from depth, normal and id. Drawing them into the
+    // G-buffer would put a normal-less sliver of geometry over every edge it was about to find.
+    // Hidden for the pass and restored after it: the asset is not touched, only not looked at.
+    const lines = [];
+    scene.traverse((o) => { if ((o.isLine || o.isLineSegments) && o.visible) lines.push(o); });
+    for (const l of lines) l.visible = false;
+
     scene.overrideMaterial = this.gbufferMaterial;
     scene.background = null;
     r.setRenderTarget(this.target);
@@ -327,6 +335,7 @@ export class BlueprintRenderer {
 
     scene.overrideMaterial = prevOverride;
     scene.background = prevBackground;
+    for (const l of lines) l.visible = true;
 
     const u = this.compositeMaterial.uniforms;
     u.uNear.value = camera.near;

@@ -7,6 +7,10 @@ node_modules/
 
 .DS_Store
 *.glb
+# ...except the reverse exports from the game. Those are not build output — the site serves
+# them (`?subject=mkcx2game` fetches one), and Pages deploys straight from main with no build
+# step, so an ignored .glb is a subject that 404s everywhere but localhost.
+!design/game-exports/*.glb
 
 # Deban decision log — private working memory, not a published artifact.
 .deban/

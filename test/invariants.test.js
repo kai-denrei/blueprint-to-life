@@ -61,6 +61,12 @@ import { BHDIM, crownHeight, crownPoint, stand } from '../src/headless/dimension
 import { buildHowitzer } from '../src/howitzer/buildHowitzer.js';
 import { HDIM, trailLayout } from '../src/howitzer/dimensions.js';
 import { applyExplode, collectExplodable } from '../src/lib/parts.js';
+import { parseGameGlb } from '../src/lib/gltfImport.js';
+import { mkcx2Joints } from '../src/mkcx2/buildMkcx2.js';
+import {
+  MKCX2_GAME_ADOPT, MKCX2_GAME_FILE, MKCX2_GAME_ROOT, MKCX2_GAME_SUBJECT,
+} from '../src/subjects/mkcx2game.js';
+import { SUBJECTS } from '../src/subjects/index.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -2447,6 +2453,159 @@ test('asset code never imports from display code', () => {
   assert.deepEqual(offenders, [], `the asset must not depend on how it is drawn:\n${offenders.join('\n')}`);
 });
 
+console.log('\nmkcx2game — the MK-CX/2 as the game dresses it, back on the bench');
+
+/**
+ * The first subject that is not built here, so none of the MODELS contract applies: the game
+ * dropped the mesh names, the collision proxy and the explode data on the way in, and the
+ * file is exactly what it is. What IS asserted is the bench's side of the bargain — that the
+ * file is served, that the import gives the display everything it needs to address the graph,
+ * that the authored frame comes back out of the game's pose, and that every name the
+ * descriptor's legend and callouts use is one the import actually produces.
+ */
+const gameGlbPath = join(ROOT, MKCX2_GAME_FILE);
+const gameGlb = readFileSync(gameGlbPath);
+const bench = await parseGameGlb(
+  gameGlb.buffer.slice(gameGlb.byteOffset, gameGlb.byteOffset + gameGlb.byteLength), MKCX2_GAME_ADOPT);
+bench.updateMatrixWorld(true);
+
+test('[mkcx2game] the export is a .glb and is not gitignored — Pages deploys straight from main', () => {
+  assert.equal(gameGlb.toString('ascii', 0, 4), 'glTF');
+  assert.equal(gameGlb.readUInt32LE(8), gameGlb.length, 'length field disagrees with the byte count');
+  const ignore = readFileSync(join(ROOT, '.gitignore'), 'utf8');
+  assert.ok(/^\*\.glb$/m.test(ignore), 'the generic *.glb ignore is expected to still exist');
+  assert.ok(/^!design\/game-exports\/\*\.glb$/m.test(ignore),
+    'design/game-exports/*.glb must be un-ignored or the subject 404s on every deploy');
+});
+
+test('[mkcx2game] is registered, and its build is asynchronous', () => {
+  assert.equal(SUBJECTS.mkcx2game.subject, MKCX2_GAME_SUBJECT);
+  assert.equal(MKCX2_GAME_SUBJECT.imported, MKCX2_GAME_FILE);
+  // A URL fetch, not a builder — main.js awaits build() precisely so it need not know which.
+  assert.equal(MKCX2_GAME_SUBJECT.build.constructor.name, 'AsyncFunction');
+});
+
+test('[mkcx2game] the game root survives under the bench root, and is what the game named it', () => {
+  assert.equal(bench.name, MKCX2_GAME_ROOT);
+  assert.equal(bench.children.length, 1);
+  assert.equal(bench.children[0].name, 'mkcx2_Game_Root');
+  assert.ok(bench.getObjectByName('MKCX2_Root'), 'the authored root is inside the game root');
+});
+
+test('[mkcx2game] the authored frame comes back out of the game pose', () => {
+  // The game had it at a quarter scale, nudged and turned; the bench inverts the wrapper so
+  // the authored root sits where buildMkcx2() put it, at 1:1, and the pose is recorded.
+  const authored = bench.getObjectByName('MKCX2_Root');
+  const p = authored.getWorldPosition(new THREE.Vector3());
+  const sc = authored.getWorldScale(new THREE.Vector3());
+  assert.ok(p.distanceTo(new THREE.Vector3(0, 0.26, 0)) < 1e-6, `authored root at ${p.toArray()}`);
+  assert.ok(Math.abs(sc.x - 1) < 1e-6 && Math.abs(sc.y - 1) < 1e-6 && Math.abs(sc.z - 1) < 1e-6);
+  const pose = bench.userData.gamePose;
+  assert.ok(pose.scale > 0 && pose.scale !== 1, 'the game did pose it at a scale, and it is quoted');
+  const authoredBox = new THREE.Box3().setFromObject(mkcx2);
+  const benchBox = new THREE.Box3().setFromObject(bench);
+  // Same hull: the dressing adds shells and sleeves on top, and nothing below or beside.
+  assert.ok(Math.abs(benchBox.min.z - authoredBox.min.z) < 0.05 && Math.abs(benchBox.max.z - authoredBox.max.z) < 0.05);
+  assert.ok(Math.abs(benchBox.max.x - authoredBox.max.x) < 0.05);
+});
+
+test('[mkcx2game] every node is named, uniquely — the game dropped the mesh names and the import put them back', () => {
+  const seen = new Map();
+  bench.traverse((o) => {
+    assert.ok(o.name && !/^mesh_\d+$/.test(o.name), `unnamed or loader-named node under ${o.parent?.name}`);
+    seen.set(o.name, (seen.get(o.name) || 0) + 1);
+  });
+  const dupes = [...seen].filter(([, n]) => n > 1).map(([k]) => k);
+  assert.deepEqual(dupes, []);
+});
+
+test('[mkcx2game] every mesh carries a unique partId and an emissive attribute — the G-buffer needs both', () => {
+  const ids = new Set();
+  bench.traverse((o) => {
+    if (!o.isMesh) return;
+    const id = o.geometry.getAttribute('partId');
+    const em = o.geometry.getAttribute('emissive');
+    assert.ok(id && em, `${o.name} was not registered`);
+    assert.ok(!ids.has(o.userData.partId), `${o.name} shares part id ${o.userData.partId}`);
+    ids.add(o.userData.partId);
+    assert.ok(o.userData.emissive <= EMISSIVE_MAX);
+  });
+  assert.equal(ids.size, bench.userData.imported.meshes);
+});
+
+test('[mkcx2game] the dressing is all there: 30 casts, 18 outline sets, 9 shells, 3 sleeves, 6 emitters lit', () => {
+  assert.deepEqual(bench.userData.imported, { meshes: 30, lines: 18 });
+  const shells = [], sleeves = [], lit = [];
+  bench.traverse((o) => {
+    if (/^ShellRack_Mount_Dressing/.test(o.name)) shells.push(o.name);
+    if (/Gun_Pivot_Dressing$|^Barrel_Pivot_Dressing$/.test(o.name)) sleeves.push(o.name);
+    if (o.isMesh && o.userData.emissive === EMISSIVE.primary && /^LiftEmitter_/.test(o.name)) lit.push(o.name);
+  });
+  assert.equal(shells.length, 9);
+  assert.equal(sleeves.length, 3);
+  assert.equal(lit.length, 6, 'the emitters kept their emissive attribute through the round trip');
+  bench.traverse((o) => {
+    if (o.isLine || o.isLineSegments) {
+      assert.ok(o.userData.gameOutline, `${o.name} is a line the import did not flag`);
+      assert.ok(/_Outline(_\d+)?$/.test(o.name));
+    }
+  });
+  // Nine shells, nine geometries: the loader shares vertex data between casts that reference
+  // the same accessors, and one shared buffer would carry one part id for all of them.
+  const geoms = new Set();
+  bench.traverse((o) => { if (o.isMesh) geoms.add(o.geometry); });
+  assert.equal(geoms.size, bench.userData.imported.meshes, 'two casts share a BufferGeometry');
+});
+
+test('[mkcx2game] nothing was invented: no explode vectors, no collision proxy', () => {
+  // The authored export wrote rest/explode extras and the game kept them on twelve nodes. The
+  // import strips them: a slider that moved the emitters and pivots but not the casts they
+  // hang beside would show a machine that does not exist.
+  assert.equal(collectExplodable(bench).length, 0);
+  let proxy = null;
+  bench.traverse((o) => { if (o.userData.isCollision) proxy = o; });
+  assert.equal(proxy, null);
+});
+
+test('[mkcx2game] carries the MK-CX/2 joints, and every target resolves', () => {
+  const declared = mkcx2Joints();
+  assert.deepEqual(bench.userData.joints.map((j) => j.key), declared.map((j) => j.key));
+  for (const j of bench.userData.joints) {
+    assert.equal(j.targets.length, declared.find((d) => d.key === j.key).targets.length,
+      `${j.key} lost a target in the round trip`);
+    for (const t of j.targets) assert.ok(bench.getObjectByName(t.node), `${j.key}: no ${t.node}`);
+  }
+});
+
+test('[mkcx2game] every legend entry and callout addresses a node the import produces', () => {
+  for (const item of MKCX2_GAME_SUBJECT.legend) {
+    const o = bench.getObjectByName(item.node);
+    assert.ok(o, `legend ${item.n}: no node ${item.node}`);
+    assert.ok(o.userData.partId != null || o.isLine || o.isLineSegments,
+      `legend ${item.n}: ${item.node} has no part id, so hovering it highlights nothing`);
+  }
+  for (const c of MKCX2_GAME_SUBJECT.callouts) {
+    assert.ok(bench.getObjectByName(c.node), `callout ${c.n}: no node ${c.node}`);
+  }
+  // The descriptor quotes what it found, after build() — and reads nothing before it.
+  assert.deepEqual(MKCX2_GAME_SUBJECT.derived(), {});
+});
+
+test('[mkcx2game] the blueprint pass hides line primitives for the G-buffer and restores them', () => {
+  // It cannot render here, but the rule is a source-level fact: the pass draws its own edges
+  // and must not draw the game's on top of them. Both halves have to be present.
+  const src = readFileSync(join(ROOT, 'src', 'render', 'blueprint.js'), 'utf8');
+  assert.ok(/isLine/.test(src) && /l\.visible = false/.test(src) && /l\.visible = true/.test(src));
+});
+
+test('the vendored three carries the loader the import needs, and the precache knows it', () => {
+  for (const f of ['addons/loaders/GLTFLoader.js', 'addons/utils/BufferGeometryUtils.js']) {
+    assert.ok(statSync(join(ROOT, 'vendor', 'three', f)).size > 0, `vendor/three/${f} missing — run npm run vendor`);
+  }
+  const sw = readFileSync(join(ROOT, 'sw.js'), 'utf8');
+  assert.ok(sw.includes('./vendor/three/addons/loaders/GLTFLoader.js'), 'precache list is stale — run npm run precache');
+});
+
 test('display code never imports from a specific asset — it renders any scene', () => {
   const offenders = [];
   for (const dir of ['render', 'camera', 'chrome']) {
@@ -2466,7 +2625,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="76eed12e">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="43f5a194">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];
