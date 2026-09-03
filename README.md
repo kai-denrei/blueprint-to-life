@@ -75,7 +75,13 @@ than silently falling through to a default.
 
 Or use the SUBJECT row in the controls panel.
 
-Keys: `1`–`6` views · `b` blueprint/PBR · `c` collision proxy · `h` hide chrome.
+Keys: `1`–`6` views · `b` blueprint/PBR · `c` collision proxy · `h` hide chrome · `g` paper
+gridline/plain · `m` motion on/off.
+
+The sheet is the **gridline** — a deep-navy blueprint grid under a mesh gradient, glyphs on
+the major intersections, a slow scroll and grain — and it is the project's face. The PAPER
+row (or `g`) swaps it for one flat colour when you want to check a model against nothing, and
+MOTION (or `m`) freezes the scroll. Both persist, and `?paper=plain&motion=0` links a state.
 
 On a phone the four corner panels become bottom sheets driven by a persistent bar (KEY / DATA /
 CTRL), one open at a time; in short landscape they become a right-hand drawer instead, because
@@ -276,6 +282,26 @@ The outline is a discontinuity filter over all three. Depth alone misses coplana
 normals alone miss two different parts that happen to face the same way. The per-vertex
 `partId` attribute closes both gaps — `/?subject=box` exists to show exactly that: the seam
 between the two flush plates is produced by the id channel and nothing else.
+
+### The paper
+
+The sheet under the drawing is the Fable Cabinet's *gridline* (`onkochishin/atelier/gridline`,
+MIT, after pulkitxm/claude-directory), ported into the composite shader verbatim apart from its
+entry point: a deep-navy ground with a four-point mesh gradient and a vignette, a scrolling
+minor/major grid, ASCII glyphs stamped on every other major intersection, value-noise grain and
+a 4×4 Bayer dither, then `tanh`. It is drawn in screen space inside the composite for the same
+reason the old grid paper was — it must never receive the outline filter and must never move
+with the camera — and it costs under a millisecond at 1x on an M4 (3.4 ms at Retina, measured
+standalone; less inside a pass that already runs).
+
+The ink flipped with it. The palette used to be dark lines on near-white; it is now light lines
+on navy, with the fills between the ground and the line, which is how a blueprint reads. The
+chrome's CSS tokens followed, so the panels are the same light-on-navy as the sheet.
+
+Two switches, both the viewer's and both persisted: **PAPER** (`g`) chooses the gridline or one
+flat colour — identity is exactly the thing you sometimes need out of the way when checking a
+model — and **MOTION** (`m`) freezes the scroll and grain. The renderer knows nothing about
+motion: the host owns the clock and simply stops advancing it.
 
 ## Versioning
 

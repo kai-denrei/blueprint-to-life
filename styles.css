@@ -5,13 +5,16 @@
   because of restraint — every additional hue pushes it toward "UI mockup of a schematic".
 */
 :root {
-  --paper:      #e8eef6;
-  --ink:        #14314f;
-  --ink-mid:    #53749c;
-  --ink-faint:  #9fb6d2;
-  --accent:     #d06a2a;
-  --panel-bg:   rgba(232, 238, 246, 0.78);
-  --panel-line: rgba(20, 49, 79, 0.34);
+  /* LIGHT ON NAVY (2026-09-03): the sheet is the gridline now, so the chrome's ink is the
+     colour of a blueprint's lines. The mode-pbr override below keeps its own slightly
+     warmer ground. */
+  --paper:      #0b1526;
+  --ink:        #e8f1ff;
+  --ink-mid:    #9fb6d8;
+  --ink-faint:  #5f7aa3;
+  --accent:     #f2903f;
+  --panel-bg:   rgba(11, 21, 38, 0.72);
+  --panel-line: rgba(232, 241, 255, 0.28);
   --mono: ui-monospace, "SF Mono", "JetBrains Mono", "IBM Plex Mono", Menlo, Consolas, monospace;
 
   /* Layout tokens live on :root, not on #app. cb-badge.js injects its widget as a child of

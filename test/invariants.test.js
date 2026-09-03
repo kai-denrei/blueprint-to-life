@@ -2606,6 +2606,43 @@ test('the vendored three carries the loader the import needs, and the precache k
   assert.ok(sw.includes('./vendor/three/addons/loaders/GLTFLoader.js'), 'precache list is stale — run npm run precache');
 });
 
+console.log('\nthe paper — the gridline, and the ink that reads on it');
+
+test('the gridline is the paper, and the composite can freeze and flatten it', () => {
+  // Source-level, since nothing renders here: both papers exist, the demo's eight faders
+  // are uniforms, and the clock is the host's (the renderer takes a time; it owns none).
+  const src = readFileSync(join(ROOT, 'src', 'render', 'blueprint.js'), 'utf8');
+  assert.ok(/gridlinePaper\(/.test(src) && /uPaperMode/.test(src), 'no gridline paper in the composite');
+  for (const u of ['uGridScale', 'uMajorStep', 'uScrollSpeed', 'uMeshAmt', 'uAsciiAmt', 'uAsciiScale', 'uVignetteAmt', 'uNoiseAmt']) {
+    assert.ok(new RegExp(`uniform float ${u};`).test(src), `${u} is not a uniform`);
+  }
+  assert.ok(/render\(scene, camera, time = 0\)/.test(src), 'the composite does not take the host clock');
+  assert.ok(!/performance\.now|Date\.now|new THREE\.Clock/.test(src), 'the renderer must not own a clock — MOTION OFF is a clock that stops');
+});
+
+test('the ink reads on navy: outline brightest, fills between ground and line', async () => {
+  const { BLUEPRINT_PALETTE: P } = await import('../src/render/blueprint.js');
+  const luma = (hex) => { const c = new THREE.Color(hex); return 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; };
+  assert.ok(luma(P.paper) < 0.05, 'the paper is not dark');
+  assert.ok(luma(P.outline) > 0.8, 'the outline is not light');
+  assert.ok(luma(P.inkDark) > luma(P.paper) && luma(P.inkLight) > luma(P.inkDark) && luma(P.inkLight) < luma(P.outline),
+    'fills must sit between the ground and the line');
+  assert.ok(!('gridMinor' in P) && !('gridMajor' in P), 'the gridline carries its own line colours');
+});
+
+test('the chrome flipped with the sheet, and the keys are documented', () => {
+  const css = readFileSync(join(ROOT, 'styles.css'), 'utf8');
+  const root = css.slice(css.indexOf(':root {'), css.indexOf('}', css.indexOf(':root {')));
+  assert.ok(/--paper:\s*#0b1526/.test(root) && /--ink:\s*#e8f1ff/.test(root), 'chrome tokens are not light-on-navy');
+  const main = readFileSync(join(ROOT, 'src', 'main.js'), 'utf8');
+  const readme = readFileSync(join(ROOT, 'README.md'), 'utf8');
+  for (const key of ['g', 'm']) {
+    assert.ok(new RegExp(`e\\.key === '${key}'`).test(main), `no '${key}' key in main.js`);
+    assert.ok(new RegExp('`' + key + '`').test(readme), `key '${key}' is not in the README`);
+  }
+  assert.ok(/paper=plain/.test(readme) && /params\.get\('paper'\)/.test(main), 'the ?paper= link is not both documented and read');
+});
+
 test('display code never imports from a specific asset — it renders any scene', () => {
   const offenders = [];
   for (const dir of ['render', 'camera', 'chrome']) {
@@ -2625,7 +2662,7 @@ test('display code never imports from a specific asset — it renders any scene'
 test('cache-bust token is present in index.html and stamped on every local asset URL', () => {
   const html = readFileSync(join(ROOT, 'index.html'), 'utf8');
   // The pattern is assembled rather than written as a literal on purpose: scripts/bust.sh
-  // rewrites `<meta name="cb" content="43f5a194">` in EVERY source file it walks, not just HTML,
+  // rewrites `<meta name="cb" content="d27bd7a0">` in EVERY source file it walks, not just HTML,
   // so a literal here gets clobbered by the next bust and the suite stops parsing.
   const metaPattern = new RegExp('<meta name=' + '"cb" content="([^"]+)"');
   const token = html.match(metaPattern)?.[1];

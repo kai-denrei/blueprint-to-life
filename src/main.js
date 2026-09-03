@@ -80,10 +80,24 @@ function setToggle(key, on) {
   t.object.visible = on;
 }
 
+/**
+ * The PAPER and its MOTION are viewer preferences, like the display mode, and they persist:
+ * someone checking models against a plain sheet all afternoon should not have to say so on
+ * every load. A URL wins over the memory (`?paper=plain&motion=0`), so a state can be linked.
+ */
+const PAPER_KEY = 'btl.paper', MOTION_KEY = 'btl.motion';
+const remembered = (k) => { try { return localStorage.getItem(k); } catch { return null; } };
+const remember = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
+const paperParam = params.get('paper');
+const motionParam = params.get('motion');
 const state = {
   mode: 'blueprint',
   explode: 0,
   showCollision: false,
+  paper: ['gridline', 'plain'].includes(paperParam) ? paperParam
+    : (remembered(PAPER_KEY) === 'plain' ? 'plain' : 'gridline'),
+  motion: motionParam != null ? motionParam !== '0' : remembered(MOTION_KEY) !== '0',
+  paperTime: 0,   // the gridline's clock; advances only while motion is on
 };
 
 const nodeToPartId = new Map();
@@ -101,6 +115,8 @@ const chrome = new SchematicChrome({
   handlers: {
     onView: (key) => { views.setView(key); chrome.setActiveView(key); },
     onMode: (key) => setMode(key),
+    onPaper: (key) => setPaper(key),
+    onMotion: (on) => setMotion(on),
     onExplode: (v) => {
       state.explode = v;
       applyExplode(root, v);
@@ -182,6 +198,20 @@ function setMode(mode) {
 }
 setMode('blueprint');
 
+function setPaper(paper) {
+  state.paper = paper === 'plain' ? 'plain' : 'gridline';
+  blueprint.setPaper(state.paper);
+  chrome.setActivePaper(state.paper);
+  remember(PAPER_KEY, state.paper);
+}
+function setMotion(on) {
+  state.motion = !!on;
+  chrome.setMotion(state.motion);
+  remember(MOTION_KEY, state.motion ? '1' : '0');
+}
+setPaper(state.paper);
+setMotion(state.motion);
+
 // --- resize ----------------------------------------------------------------
 
 function resize() {
@@ -246,8 +276,9 @@ renderer.setAnimationLoop(() => {
   applyArticulation();
 
   const camera = views.camera;
+  if (state.motion) state.paperTime += dt;
   if (state.mode === 'blueprint') {
-    blueprint.render(scene, camera);
+    blueprint.render(scene, camera, state.paperTime);
   } else {
     renderer.setRenderTarget(null);
     renderer.render(scene, camera);
@@ -272,6 +303,10 @@ addEventListener('keydown', (e) => {
     if (proxy) proxy.visible = state.showCollision;
   } else if (e.key === 'h') {
     app.classList.toggle('hide-chrome');
+  } else if (e.key === 'g') {
+    setPaper(state.paper === 'plain' ? 'gridline' : 'plain');
+  } else if (e.key === 'm') {
+    setMotion(!state.motion);
   }
 });
 

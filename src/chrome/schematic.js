@@ -182,6 +182,21 @@ export class SchematicChrome {
     modes.row.querySelector('.ctl-opts').appendChild(calloutBtn);
     box.appendChild(modes.row);
 
+    // THE PAPER (2026-09-03). The gridline is the sheet's identity, and identity is exactly
+    // the thing you sometimes need out of the way: PLAIN is one flat colour for checking a
+    // model against nothing, and MOTION freezes the gridline's scroll and grain without
+    // changing what it looks like. Both are the viewer's, like MODE, and both persist.
+    const papers = this._optionRow(
+      'PAPER',
+      [['gridline', 'GRIDLINE'], ['plain', 'PLAIN']],
+      (key) => this.handlers.onPaper?.(key),
+    );
+    this.paperButtons = papers.buttons;
+    this.motionBtn = el('button', 'btn', 'MOTION');
+    this.motionBtn.addEventListener('click', () => this.handlers.onMotion?.(!this.motionBtn.classList.contains('on')));
+    papers.row.querySelector('.ctl-opts').appendChild(this.motionBtn);
+    box.appendChild(papers.row);
+
     box.appendChild(this._slider('EXPLODE', 0, 1, 0.001, 0, (v) => this.handlers.onExplode?.(v)));
 
     // One slider per declared joint. The viewer has no idea whether it is driving a turret
@@ -327,6 +342,14 @@ export class SchematicChrome {
   setActiveMode(key) {
     for (const [k, b] of this.modeButtons) b.classList.toggle('on', k === key);
     this.root.classList.toggle('mode-pbr', key === 'pbr');
+  }
+
+  setActivePaper(key) {
+    for (const [k, b] of this.paperButtons || []) b.classList.toggle('on', k === key);
+  }
+
+  setMotion(on) {
+    if (this.motionBtn) this.motionBtn.classList.toggle('on', !!on);
   }
 
   crossfade() {

@@ -16,6 +16,15 @@ import * as THREE from 'three';
  * Per-mesh wireframe was never on the table — it draws every triangle edge, which is a function
  * of mesh density rather than of what the eye reads as an edge.
  *
+ * The PAPER is the Fable Cabinet's "gridline" (onkochishin/atelier/gridline, MIT, after
+ * pulkitxm/claude-directory): a deep-navy blueprint grid under a four-point mesh gradient,
+ * ASCII glyphs stamped on the major intersections, a slow scroll, grain and an ordered dither.
+ * It became the project's identity on 2026-09-03, and the ink flipped with it: light lines on
+ * navy, the way a blueprint actually is. Drawn inside the composite, in screen space, so it
+ * never receives the outline filter and never moves with the camera. Two things the operator
+ * asked for are kept as switches: the scroll can be frozen (uTime simply stops advancing), and
+ * the paper can be PLAIN — one flat colour — for checking a model against nothing.
+ *
  * This module imports nothing from src/tank/. It renders whatever scene it is handed.
  */
 
@@ -93,9 +102,17 @@ const COMPOSITE_FRAG = /* glsl */`
   uniform float uOrtho;        // 1.0 when the camera is orthographic
   uniform float uPixelRatio;
 
-  uniform vec3  uPaper;
-  uniform vec3  uGridMinor;
-  uniform vec3  uGridMajor;
+  uniform vec3  uPaper;        // the PLAIN paper, and the gridline's ground
+  uniform float uPaperMode;    // 0 = gridline, 1 = plain
+  uniform float uTime;         // the host advances it only while MOTION is on
+  uniform float uGridScale;    // gridline faders, the demo's names
+  uniform float uMajorStep;
+  uniform float uScrollSpeed;
+  uniform float uMeshAmt;
+  uniform float uAsciiAmt;
+  uniform float uAsciiScale;
+  uniform float uVignetteAmt;
+  uniform float uNoiseAmt;
   uniform vec3  uOutline;
   uniform float uFillOpacity;
   uniform float uDepthWeight;
@@ -118,26 +135,102 @@ const COMPOSITE_FRAG = /* glsl */`
     return mix(persp, ortho, uOrtho);
   }
 
-  // Screen-space grid paper. Deliberately not scene geometry: it must not receive the
-  // outline filter, and it must not move when the camera does.
-  vec3 gridPaper(vec2 fragPx) {
-    vec2 p = fragPx / uPixelRatio;
-    float minorPitch = 14.0;
-    float majorPitch = 84.0;
+  // ---- THE PAPER: gridline, ported from the Cabinet's atelier/gridline ------------------
+  // Screen space on purpose: it must not receive the outline filter, and it must not move
+  // when the camera does. Constants and function bodies are the demo's; only the entry
+  // point changed (fragment px in, colour out) so a re-port stays mechanical.
+  const float THIN_WIDTH   = 0.010;
+  const float MAJOR_WIDTH  = 0.018;
+  const float DITHER_DARK  = 0.010;
+  const float DITHER_LIGHT = 0.004;
+  const float ASCII_EVERY  = 2.0;
 
-    vec2 mi = abs(fract(p / minorPitch) - 0.5) * minorPitch;
-    float minorLine = 1.0 - smoothstep(0.0, 0.9, min(mi.x, mi.y));
+  float bayer4(vec2 p) {
+    ivec2 ip = ivec2(int(mod(p.x, 4.0)), int(mod(p.y, 4.0)));
+    int idx = ip.y * 4 + ip.x;
+    int m[16]; m[0]=0;m[1]=8;m[2]=2;m[3]=10;m[4]=12;m[5]=4;m[6]=14;m[7]=6;
+    m[8]=3;m[9]=11;m[10]=1;m[11]=9;m[12]=15;m[13]=7;m[14]=13;m[15]=5;
+    return float(m[idx]) / 15.0;
+  }
+  float hash21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  float vnoise(vec2 p) {
+    vec2 i = floor(p), f = fract(p);
+    float a = hash21(i), b = hash21(i + vec2(1, 0)), c = hash21(i + vec2(0, 1)), d = hash21(i + vec2(1, 1));
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+  float gridLineAA(vec2 uv, float scale, float width) {
+    vec2 g = abs(fract(uv * scale) - 0.5);
+    float d = min(g.x, g.y);
+    float aa = fwidth(d);
+    return 1.0 - smoothstep(width, width + aa, d);
+  }
+  float majorGridAA(vec2 uv, float scale, float stepN, float width) {
+    return gridLineAA(uv, max(1.0, scale / stepN), width);
+  }
+  vec3 meshGradient(vec2 uv) {
+    vec2 p0 = vec2(-0.70, -0.45), p1 = vec2(0.75, -0.35), p2 = vec2(-0.65, 0.65), p3 = vec2(0.80, 0.55);
+    vec3 c0 = vec3(0.05, 0.10, 0.26), c1 = vec3(0.08, 0.16, 0.36), c2 = vec3(0.03, 0.09, 0.22), c3 = vec3(0.10, 0.20, 0.40);
+    float e = 2.0;
+    float w0 = pow(1.0 / (0.2 + distance(uv, p0)), e), w1 = pow(1.0 / (0.2 + distance(uv, p1)), e);
+    float w2 = pow(1.0 / (0.2 + distance(uv, p2)), e), w3 = pow(1.0 / (0.2 + distance(uv, p3)), e);
+    return (c0 * w0 + c1 * w1 + c2 * w2 + c3 * w3) / (w0 + w1 + w2 + w3);
+  }
+  float sdLineX(vec2 p, float w) { return 1.0 - smoothstep(w, w + fwidth(p.y), abs(p.y)); }
+  float sdLineY(vec2 p, float w) { return 1.0 - smoothstep(w, w + fwidth(p.x), abs(p.x)); }
+  float sdDiag1(vec2 p, float w) { float d = abs(p.x + p.y) / sqrt(2.0); return 1.0 - smoothstep(w, w + fwidth(d), d); }
+  float sdDiag2(vec2 p, float w) { float d = abs(p.x - p.y) / sqrt(2.0); return 1.0 - smoothstep(w, w + fwidth(d), d); }
+  float sdDot(vec2 p, float r) { float d = length(p); return 1.0 - smoothstep(r, r + fwidth(d), d); }
+  float asciiGlyph(vec2 p, float level) {
+    float w = 0.11, r = 0.10;
+    float g0 = sdDot(p, r), g1 = sdLineX(p, w), g2 = sdLineY(p, w), g3 = max(sdLineX(p, w), sdLineY(p, w)),
+          g4 = sdDiag1(p, w), g5 = sdDiag2(p, w), g6 = max(sdDiag1(p, w), sdDiag2(p, w)),
+          g7 = max(sdLineX(p, w), max(sdLineY(p, w), g6));
+    float m = 0.0;
+    m = mix(m, g0, smoothstep(0.00, 0.12, level) * (1.0 - step(level, 0.12)));
+    m = mix(m, g1, smoothstep(0.12, 0.28, level) * (1.0 - step(level, 0.28)));
+    m = mix(m, g2, smoothstep(0.28, 0.44, level) * (1.0 - step(level, 0.44)));
+    m = mix(m, g3, smoothstep(0.44, 0.60, level) * (1.0 - step(level, 0.60)));
+    m = mix(m, g4, smoothstep(0.60, 0.72, level) * (1.0 - step(level, 0.72)));
+    m = mix(m, g5, smoothstep(0.72, 0.84, level) * (1.0 - step(level, 0.84)));
+    m = mix(m, g6, smoothstep(0.84, 0.94, level) * (1.0 - step(level, 0.94)));
+    m = mix(m, g7, smoothstep(0.94, 1.00, level));
+    return clamp(m, 0.0, 1.0);
+  }
+  vec3 gridlinePaper(vec2 fragPx) {
+    vec2 R = uResolution;
+    float t = uTime;
+    vec2 uv = (fragPx - 0.5 * R) / max(R.y, 1.0);
 
-    vec2 ma = abs(fract(p / majorPitch) - 0.5) * majorPitch;
-    float majorLine = 1.0 - smoothstep(0.0, 1.1, min(ma.x, ma.y));
+    vec3 baseDeep = vec3(0.03, 0.06, 0.12);
+    vec3 baseTint = vec3(0.05, 0.09, 0.18);
+    float vgrad = smoothstep(-0.92, 0.55, -uv.y);
+    vec3 bg = mix(baseDeep, baseTint, vgrad);
+    bg = mix(bg, meshGradient(uv), uMeshAmt);
+    float vig = 1.0 - uVignetteAmt * length(uv);
+    bg *= clamp(vig, 0.0, 1.0);
 
-    vec3 c = mix(uPaper, uGridMinor, minorLine * 0.55);
-    c = mix(c, uGridMajor, majorLine * 0.75);
+    vec2 scrollDir = normalize(vec2(1.0, -0.55));
+    vec2 uvAnim = uv + uScrollSpeed * t * scrollDir;
+    float thin = gridLineAA(uvAnim, uGridScale, THIN_WIDTH);
+    float major = majorGridAA(uvAnim, uGridScale, uMajorStep, MAJOR_WIDTH);
+    vec3 col = bg + vec3(0.58, 0.66, 0.95) * thin * 0.25 + vec3(0.78, 0.84, 1.00) * major * 0.52;
 
-    // Very slight corner falloff so a large viewport doesn't read as flat colour.
-    vec2 q = vUv - 0.5;
-    c *= 1.0 - dot(q, q) * 0.16;
-    return c;
+    vec2 idx = floor(uvAnim * (uGridScale / uMajorStep) + 0.5);
+    float selX = 1.0 - step(0.001, abs(fract(idx.x / ASCII_EVERY)));
+    float selY = 1.0 - step(0.001, abs(fract(idx.y / ASCII_EVERY)));
+    if (uAsciiAmt > 0.001) {
+      vec2 cellF = fract(uv * uAsciiScale) - 0.5;
+      float lvl = clamp(dot(col, vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0);
+      float glyph = asciiGlyph(cellF, lvl);
+      vec3 asciiColor = mix(vec3(0.50, 0.70, 1.0), meshGradient(uv), 0.25);
+      col = mix(col, col + asciiColor * glyph * 0.30, uAsciiAmt * max(selX, selY) * major);
+    }
+    float n = vnoise(fragPx * 0.6 + vec2(t * 12.0, -t * 9.0));
+    col += (n - 0.5) * uNoiseAmt;
+    float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+    col += (bayer4(fragPx) - 0.5) * mix(DITHER_DARK, DITHER_LIGHT, luma);
+    return tanh(col);
   }
 
   void main() {
@@ -177,7 +270,7 @@ const COMPOSITE_FRAG = /* glsl */`
     edge = smoothstep(0.22, 0.65, edge);
 
     bool hasGeo = texture(tDepth, vUv).x < 1.0;
-    vec3 paper = gridPaper(gl_FragCoord.xy);
+    vec3 paper = uPaperMode > 0.5 ? uPaper : gridlinePaper(gl_FragCoord.xy);
     vec3 col = paper;
     vec4 ink = texture(tInk, vUv);
     if (hasGeo) {
@@ -214,18 +307,29 @@ const COMPOSITE_FRAG = /* glsl */`
   }
 `;
 
+// LIGHT ON NAVY. The palette flipped with the paper: the outline is the brightest thing on
+// the sheet and the fills sit between the ground and the line, which is how a blueprint
+// reads. `paper` is the PLAIN sheet and the gridline's darkest ground; there is no grid
+// colour here any more because the gridline carries its own.
 export const BLUEPRINT_PALETTE = {
-  paper:     0xe8eef6,
-  gridMinor: 0xc2d2e6,
-  gridMajor: 0x9fb6d2,
-  inkLight:  0xa8bed8,
-  inkDark:   0x53749c,
-  outline:   0x14314f,
-  accent:    0xd06a2a,
-  glow:      0x8b46c9,
-  glow2:     0x1f8fd0,
-  glow3:     0x25b463,
-  glow4:     0xd8442f,
+  paper:     0x0b1526,
+  inkLight:  0x7fa3d6,
+  inkDark:   0x22406b,
+  outline:   0xe8f1ff,
+  accent:    0xf2903f,
+  glow:      0xb07cff,
+  glow2:     0x3fb3ff,
+  glow3:     0x3ddc84,
+  glow4:     0xff5f4f,
+};
+
+// The gridline's faders. The demo's defaults are 18 / 4 / 0.02 / 0.85 / 0.23 / 26 / 0.28 /
+// 0.03; the sheet under a drawing wants a finer pitch than a sheet that IS the picture —
+// at 18 the major lines were as bold as the model's own outline — so the grid is 26 cells
+// tall with a major every 5. Everything else is the demo's. `set()` changes any live.
+export const GRIDLINE_DEFAULTS = {
+  uGridScale: 26, uMajorStep: 5, uScrollSpeed: 0.02, uMeshAmt: 0.85,
+  uAsciiAmt: 0.23, uAsciiScale: 26, uVignetteAmt: 0.28, uNoiseAmt: 0.03,
 };
 
 export class BlueprintRenderer {
@@ -278,8 +382,9 @@ export class BlueprintRenderer {
         uOrtho: { value: 0 },
         uPixelRatio: { value: renderer.getPixelRatio() },
         uPaper: { value: new THREE.Color(this.palette.paper) },
-        uGridMinor: { value: new THREE.Color(this.palette.gridMinor) },
-        uGridMajor: { value: new THREE.Color(this.palette.gridMajor) },
+        uPaperMode: { value: 0 },
+        uTime: { value: 0 },
+        ...Object.fromEntries(Object.entries(GRIDLINE_DEFAULTS).map(([k, v]) => [k, { value: v }])),
         uOutline: { value: new THREE.Color(this.palette.outline) },
         uFillOpacity: { value: 0.88 },
         uDepthWeight: { value: 0.55 },
@@ -313,8 +418,19 @@ export class BlueprintRenderer {
     if (u) u.value = value;
   }
 
-  render(scene, camera) {
+  /** The paper: 'gridline' or 'plain'. */
+  setPaper(mode) {
+    this.compositeMaterial.uniforms.uPaperMode.value = mode === 'plain' ? 1 : 0;
+  }
+
+  /**
+   * @param {number} [time]  seconds, for the gridline's scroll and grain. The host owns the
+   *   clock so that MOTION OFF is simply a clock that does not advance — nothing here knows
+   *   whether the sheet is moving.
+   */
+  render(scene, camera, time = 0) {
     const r = this.renderer;
+    this.compositeMaterial.uniforms.uTime.value = time;
     const prevOverride = scene.overrideMaterial;
     const prevBackground = scene.background;
 
