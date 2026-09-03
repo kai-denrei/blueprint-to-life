@@ -23,6 +23,7 @@ export function buildMkcx2() {
   root.add(buildHull(M));
   root.add(buildCollision());
   root.add(buildHoverGear(M));
+  root.add(buildPedestal(M));
   root.add(buildTurret(M));
   root.add(buildSecondaries(M));
   root.add(buildHullDetails(M));
@@ -130,6 +131,23 @@ function buildHoverGear(M) {
     }
   }
   return group;
+}
+
+// --- the pedestal the blade stands on -----------------------------------------
+// Static (a child of the root, not the pivot): the blade turns on it. Its
+// footprint is inside the blade's, so the blade overhangs it on every side
+// and the raise reads as deliberate rather than as a gap.
+function buildPedestal(M) {
+  const t = D.turret, p = t.pedestal;
+  const hz = p.length / 2, hh = p.height;
+  const mesh = new THREE.Mesh(
+    extrudeProfile([[-hz, 0], [-hz - 0.06, hh / 2], [-hz, hh], [hz, hh], [hz + 0.06, hh / 2], [hz, 0]], p.width),
+    M.turret,
+  );
+  mesh.name = 'Turret_Pedestal';
+  mesh.position.set(0, D.hull.deckY, t.ringZ);
+  mesh.castShadow = mesh.receiveShadow = true;
+  return registerPart(mesh, { explodable: false });
 }
 
 // --- the blade turret --------------------------------------------------------

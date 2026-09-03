@@ -144,7 +144,8 @@ const MODELS = [
                'Nacelle_L', 'Nacelle_R', 'Secondary_Turrets',
                'Secondary_L_Pivot', 'Secondary_R_Pivot',
                'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot',
-               'ShellRack_Mount', 'Shell_Socket_1', 'Shell_Socket_9', 'Deck_Glow_1', 'Deck_Glow_2'],
+               'ShellRack_Mount', 'Shell_Socket_1', 'Shell_Socket_9', 'Deck_Glow_1', 'Deck_Glow_2',
+               'Turret_Pedestal'],
     pivots: ['Turret_Pivot', 'Barrel_Pivot',
              'Secondary_L_Pivot', 'Secondary_R_Pivot',
              'Secondary_L_Gun_Pivot', 'Secondary_R_Gun_Pivot'],
@@ -324,6 +325,36 @@ const MODELS = [
     pivots: ['Traverse_Pivot', 'Elevation_Pivot', 'Trail_Front_L', 'Trail_Rear_R'],
   },
 ];
+
+console.log('\nmkcx2 — the main gun clears the secondaries through the full traverse');
+{
+  // The blade was on the deck and the barrel swept through the secondary
+  // turrets' shells at the crossing (operator, 2026-09-03). The clearance is
+  // VERTICAL, so world AABBs are a fair test: a rotated barrel's box is wide
+  // in the plan, but it only meets a secondary's box if their heights meet.
+  const turret = mkcx2.getObjectByName('Turret_Pivot');
+  const barrel = mkcx2.getObjectByName('Barrel_Mesh');
+  const parts = ['Secondary_L_Mesh', 'Secondary_R_Mesh', 'Secondary_L_Gun_Mesh', 'Secondary_R_Gun_Mesh',
+    'Secondary_L_Mantlet', 'Secondary_R_Mantlet'].map((n) => mkcx2.getObjectByName(n));
+  const b = new THREE.Box3(), o = new THREE.Box3();
+  let worst = Infinity, worstAz = 0;
+  for (let az = 0; az < 360; az += 3) {
+    turret.rotation.y = (az * Math.PI) / 180;
+    mkcx2.updateMatrixWorld(true);
+    b.setFromObject(barrel);
+    for (const part of parts) {
+      o.setFromObject(part);
+      const gap = b.min.y - o.max.y;
+      if (gap < worst) { worst = gap; worstAz = az; }
+      test(`[mkcx2] barrel clear of ${part.name} at azimuth ${az}°`, () => {
+        assert.ok(!b.intersectsBox(o), `barrel box ${JSON.stringify(b)} meets ${part.name} ${JSON.stringify(o)}`);
+      });
+    }
+  }
+  turret.rotation.y = 0;
+  mkcx2.updateMatrixWorld(true);
+  console.log(`  (closest approach ${worst.toFixed(3)} m vertical, at azimuth ${worstAz}°)`);
+}
 
 console.log('\nscene graph — engine-portable naming');
 

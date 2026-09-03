@@ -24,7 +24,13 @@ export const CX2DIM = {
     // A blade, not a block: 0.34 tall against the MK-CX's 0.78, wider (2.30) so the gun still
     // reads as carried by something. Sits directly on the deck plane.
     ringZ: -0.30,
-    ringY: 1.40,
+    // ELEVATED (operator, 2026-09-03: the gun clipped the secondaries on
+    // traverse). The blade stands on a faceted pedestal 0.22 above the deck;
+    // with the trunnion at 0.40 the bore is at 2.02 and the barrel's
+    // underside clears the secondaries' shells (top 1.60) by 0.27 at the
+    // crossing. The invariants test sweeps the full traverse to prove it.
+    ringY: 1.62,
+    pedestal: { height: 0.22, width: 1.80, length: 2.20 },
     width: 2.30,
     profile: [
       [-1.34, 0.00], [-1.46, 0.12], [-1.16, 0.30], [0.70, 0.34],
@@ -36,7 +42,7 @@ export const CX2DIM = {
     // The cradle stands proud of the blade: a gun needs a trunnion, and a bore at deck level
     // would sweep straight through the secondaries. 0.38 puts the barrel's underside just over
     // their (lowered) shells at the crossing.
-    trunnionY: 0.38,
+    trunnionY: 0.40,
     trunnionZ: 1.10,
     mantlet: { width: 0.92, height: 0.44, depth: 0.50 },
   },
